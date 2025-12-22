@@ -17,9 +17,10 @@ var cfg config.Config
 
 // --- ROOT COMMAND ---
 var rootCmd = &cobra.Command{
-	Use:   "mkvtea",
-	Short: "🍵 Advanced MKV Tool with TUI (Extract/Merge)",
-	Long:  `MKVTea is a blazing fast batch processing tool for managing your Anime/TV Series library.`,
+	Use:     "mkvtea",
+	Short:   "🍵 Advanced MKV Tool with TUI (Extract/Merge)",
+	Long:    `MKVTea is a blazing fast batch processing tool for managing your Anime/TV Series library.`,
+	Version: config.Version,
 }
 
 func init() {
