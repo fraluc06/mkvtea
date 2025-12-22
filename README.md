@@ -78,16 +78,16 @@ Download from [Releases](https://github.com/yourusername/mkvtea/releases)
 
 ### Global Flags
 
-| Flag | Short | Default | Description |
-|------|-------|---------|-------------|
-| `--lang` | `-l` | `ita` | Subtitle language code (ita, eng, jpn, etc.) |
-| `--output` | `-o` | - | Custom output directory |
-| `--subs-dir` | `-s` | - | Custom directory for external subtitles (merge only) |
-| `--recursive` | `-r` | false | Process all subdirectories |
-| `--dry-run` | `-d` | false | Simulate without modifying files |
-| `--audio` | `-a` | - | Keep only this audio language (removes others) |
-| `--concurrency` | `-c` | 2 | Max parallel workers |
-| `--fast` | `-f` | false | Fast metadata-only mode (no remux) |
+| Flag            | Short | Default | Description                                          |
+|:----------------|:-----:|:-------:|------------------------------------------------------|
+| `--lang`        | `-l`  |  `ita`  | Subtitle language code (ita, eng, jpn, etc.)         |
+| `--output`      | `-o`  |    -    | Custom output directory                              |
+| `--subs-dir`    | `-s`  |    -    | Custom directory for external subtitles (merge only) |
+| `--recursive`   | `-r`  | `false` | Process all subdirectories                           |
+| `--dry-run`     | `-d`  | `false` | Simulate without modifying files                     |
+| `--audio`       | `-a`  |    -    | Keep only this audio language (removes others)       |
+| `--concurrency` | `-c`  |   `2`   | Max parallel workers                                 |
+| `--fast`        | `-f`  | `false` | Fast metadata-only mode (no remux)                   |
 
 ## 💡 Examples
 
@@ -182,18 +182,18 @@ Features:
 
 ISO 639-2 three-letter codes:
 
-| Language | Code |
-|----------|------|
-| Japanese | `jpn` |
-| Italian | `ita` |
-| English | `eng` |
-| German | `deu` |
-| French | `fra` |
-| Spanish | `spa` |
-| Portuguese | `por` |
+| Language           | Code  |
+|:-------------------|:------|
+| Japanese           | `jpn` |
+| Italian            | `ita` |
+| English            | `eng` |
+| German             | `deu` |
+| French             | `fra` |
+| Spanish            | `spa` |
+| Portuguese         | `por` |
 | Chinese (Mandarin) | `zho` |
-| Korean | `kor` |
-| Russian | `rus` |
+| Korean             | `kor` |
+| Russian            | `rus` |
 
 ## 🐛 Troubleshooting
 
@@ -221,20 +221,42 @@ ISO 639-2 three-letter codes:
 
 ```
 mkvtea/
-├── main.go                    # Entry point
+├── main.go                         # Entry point
 ├── cmd/
-│   └── root.go               # CLI commands (extract, merge)
+│   ├── root.go                    # CLI setup, command definitions, flags
+│   └── scanner.go                 # File scanning logic (recursive/non-recursive)
 ├── internal/
 │   ├── config/
-│   │   └── config.go         # Configuration struct
+│   │   └── config.go              # Configuration struct
 │   ├── mkv/
-│   │   └── engine.go         # MKV processing logic
+│   │   ├── engine.go              # Core extract/merge logic (228 LOC)
+│   │   ├── metadata.go            # GetInfo + JSON structs (Track, Attachment, MkvInfo)
+│   │   └── parser.go              # Episode number extraction
 │   └── ui/
-│       ├── processor.go      # TUI model and rendering
-│       └── styles.go         # Catppuccin Mocha theme
-├── go.mod / go.sum           # Go dependencies
-└── README.md                  # This file
+│       ├── model.go               # ProcessModel struct + Init/Update lifecycle (142 LOC)
+│       ├── view.go                # View rendering method
+│       ├── processing.go          # File processing logic + concurrency (92 LOC)
+│       ├── rendering.go           # Log and progress bar rendering (82 LOC)
+│       ├── processor.go           # RunProcessTUI entry point
+│       └── styles.go              # Catppuccin Mocha theme
+├── go.mod / go.sum                # Go dependencies
+├── AGENTS.md                       # Development guidelines for agents
+└── README.md                       # This file
 ```
+
+### File Responsibility
+
+- **`cmd/scanner.go`** - Find MKV files in directories
+- **`mkv/metadata.go`** - Read MKV file metadata (tracks, attachments)
+- **`mkv/parser.go`** - Extract episode numbers from filenames
+- **`mkv/engine.go`** - Core MKV operations (extract, merge, property editing)
+- **`ui/model.go`** - BubbleTea model state + lifecycle (Init, Update)
+- **`ui/processing.go`** - Concurrent file processing logic
+- **`ui/rendering.go`** - Progress bars and log rendering
+- **`ui/view.go`** - TUI display layout
+- **`ui/processor.go`** - Entry point for TUI execution
+
+**Design principle**: Each file has a single, clear responsibility (50-150 LOC target)
 
 ## 🎨 Design
 

@@ -11,12 +11,15 @@ func ScanFiles(dir string, recursive bool) []string {
 	var files []string
 
 	if recursive {
-		filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 			if err == nil && !d.IsDir() && strings.EqualFold(filepath.Ext(d.Name()), ".mkv") {
 				files = append(files, path)
 			}
 			return nil
 		})
+		if err != nil {
+			return nil
+		}
 	} else {
 		entries, err := os.ReadDir(dir)
 		if err != nil {

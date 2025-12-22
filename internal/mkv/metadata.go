@@ -2,6 +2,7 @@ package mkv
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -26,15 +27,15 @@ type Attachment struct {
 	ContentType string `json:"content_type"`
 }
 
-// MkvInfo contains metadata about an MKV file
-type MkvInfo struct {
-	Tracks      []Track       `json:"tracks"`
-	Attachments []Attachment  `json:"attachments"`
-	Chapters    []interface{} `json:"chapters"`
+// Info contains metadata about an MKV file
+type Info struct {
+	Tracks      []Track      `json:"tracks"`
+	Attachments []Attachment `json:"attachments"`
+	Chapters    []any        `json:"chapters"`
 }
 
 // GetInfo analyzes MKV file metadata using mkvmerge
-func GetInfo(path string) (*MkvInfo, error) {
+func GetInfo(path string) (*Info, error) {
 	// Verify file exists and is accessible
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
@@ -46,13 +47,14 @@ func GetInfo(path string) (*MkvInfo, error) {
 	cmd := exec.Command("mkvmerge", "-J", path)
 	out, err := cmd.Output()
 	if err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			return nil, fmt.Errorf("corrupted or unreadable MKV file: %s", path)
 		}
 		return nil, fmt.Errorf("failed to analyze MKV: %v", err)
 	}
 
-	var info MkvInfo
+	var info Info
 	if err := json.Unmarshal(out, &info); err != nil {
 		return nil, fmt.Errorf("failed to parse MKV metadata: %v", err)
 	}

@@ -137,7 +137,7 @@ func RunMerge(path string, cfg config.Config) error {
 		return fmt.Errorf("skipped")
 	}
 
-	return runMkvMergeStandard(path, subFile, subsSource, epNum, cfg)
+	return runMkvMergeStandard(path, subFile, subsSource, cfg)
 }
 
 // runPropEdit modifies track flags in-place without remuxing (fast metadata-only mode)
@@ -161,7 +161,7 @@ func runPropEdit(path string, cfg config.Config) error {
 	return execute(cfg, "mkvpropedit", args...)
 }
 
-func runMkvMergeStandard(path, subFile, subsSource, epNum string, cfg config.Config) error {
+func runMkvMergeStandard(path, subFile, subsSource string, cfg config.Config) error {
 	info, err := GetInfo(path)
 	if err != nil {
 		return fmt.Errorf("failed to read MKV metadata: %v", err)
