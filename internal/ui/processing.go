@@ -19,6 +19,11 @@ func (m *ProcessModel) startAutoClose() tea.Cmd {
 // startProcessing returns a command that begins file processing
 func (m *ProcessModel) startProcessing() tea.Cmd {
 	return func() tea.Msg {
+		// Initialize checkpoint if enabled
+		if m.cfg.CheckpointInterval > 0 {
+			m.checkpointMgr.Create(m.cfg, m.totalFiles)
+		}
+
 		// Start processing all files
 		for _, file := range m.files {
 			m.wg.Add(1)
@@ -60,24 +65,41 @@ func (m *ProcessModel) processFile(file string) {
 		if err.Error() == "skipped" {
 			logLine = fmt.Sprintf("⏭️  SKIPPED: %s", filename)
 			m.skippedCount++
+			if m.cfg.CheckpointInterval > 0 {
+				m.checkpointMgr.AddSkipped(file, "no subtitles")
+			}
 		} else {
 			logLine = fmt.Sprintf("❌ FAILED: %s - %v", filename, err)
 			m.errorCount++
+			if m.cfg.CheckpointInterval > 0 {
+				m.checkpointMgr.AddFailed(file, err.Error())
+			}
 		}
 	} else {
 		logLine = fmt.Sprintf("✅ SUCCESS: %s", filename)
 		m.successCount++
+		if m.cfg.CheckpointInterval > 0 {
+			m.checkpointMgr.AddSuccess(file)
+		}
 
 		// Track output paths for DRY-RUN summary
 		if m.cfg.Mode == "extract" {
-			subsDir := filepath.Join(filepath.Dir(file), "subs", m.cfg.Lang)
+			lang := m.cfg.Lang
+			if len(m.cfg.Languages) > 0 {
+				lang = m.cfg.Languages[0]
+			}
+			subsDir := filepath.Join(filepath.Dir(file), "subs", lang)
 			if !contains(m.extractedPaths, subsDir) {
 				m.extractedPaths = append(m.extractedPaths, subsDir)
 			}
 		} else if m.cfg.Mode == "merge" {
 			outRoot := m.cfg.OutDir
 			if outRoot == "" {
-				outRoot = filepath.Join(filepath.Dir(m.cfg.Dir), filepath.Base(m.cfg.Dir)+"_"+m.cfg.Lang)
+				lang := m.cfg.Lang
+				if len(m.cfg.Languages) > 0 {
+					lang = m.cfg.Languages[0]
+				}
+				outRoot = filepath.Join(filepath.Dir(m.cfg.Dir), filepath.Base(m.cfg.Dir)+"_"+lang)
 			}
 			m.outputDir = outRoot
 		}
@@ -85,6 +107,15 @@ func (m *ProcessModel) processFile(file string) {
 
 	m.logs = append(m.logs, logLine)
 	m.processedIdx++
+
+	// Save checkpoint at intervals
+	if m.cfg.CheckpointInterval > 0 {
+		m.checkpointCounter++
+		if m.checkpointCounter >= m.cfg.CheckpointInterval {
+			m.checkpointMgr.Save()
+			m.checkpointCounter = 0
+		}
+	}
 
 	// Update viewport - truncate will happen in renderLogs based on available width
 	m.viewport.SetContent(m.renderLogs())

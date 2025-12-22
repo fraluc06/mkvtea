@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"mkvtea/internal/checkpoint"
 	"mkvtea/internal/config"
 	"sync"
 	"time"
@@ -46,6 +47,10 @@ type ProcessModel struct {
 	finished      bool
 	quitting      bool
 	autoCloseTime time.Time
+
+	// Checkpoint tracking
+	checkpointMgr     *checkpoint.Manager
+	checkpointCounter int
 }
 
 // NewProcessModel creates a new processor model
@@ -59,6 +64,9 @@ func NewProcessModel(cfg config.Config, files []string) *ProcessModel {
 	s.Style = subtitleStyle
 
 	vp := viewport.New(80, 15)
+
+	// Initialize checkpoint manager
+	checkpointMgr, _ := checkpoint.NewManager(cfg)
 
 	return &ProcessModel{
 		cfg:           cfg,
@@ -74,6 +82,7 @@ func NewProcessModel(cfg config.Config, files []string) *ProcessModel {
 		autoCloseTime: time.Time{},
 		width:         80, // Default, will be updated by WindowSizeMsg
 		height:        24, // Default, will be updated by WindowSizeMsg
+		checkpointMgr: checkpointMgr,
 	}
 }
 

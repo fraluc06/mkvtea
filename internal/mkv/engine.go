@@ -53,55 +53,64 @@ func execute(cfg config.Config, command string, args ...string) error {
 	return nil
 }
 
-// RunExtract extracts subtitles from an MKV file based on the configured language
+// RunExtract extracts subtitles from an MKV file based on the configured language(s)
 func RunExtract(path string, cfg config.Config) error {
 	info, err := GetInfo(path)
 	if err != nil {
 		return err
 	}
 
-	subsDir := filepath.Join(filepath.Dir(path), "subs", cfg.Lang)
-	if !cfg.DryRun {
-		if err := os.MkdirAll(subsDir, os.ModePerm); err != nil {
-			return fmt.Errorf("failed to create subtitle directory: %v", err)
-		}
-	}
-
 	epNum := GetEpisodeNumber(filepath.Base(path))
-	found := false
+	overallFound := false
 
-	for i, t := range info.Tracks {
-		if t.Type == "subtitles" && (t.Props.Lang == cfg.Lang || t.Props.Lang == "und") {
-			found = true
-			ext := ".srt"
-			// Detect ASS format
-			if strings.Contains(strings.ToLower(t.Codec), "ass") || strings.Contains(strings.ToLower(t.Codec), "substationalpha") {
-				ext = ".ass"
-			}
-			// Handle forced/sign subtitle tracks
-			suffix := ""
-			if strings.Contains(strings.ToLower(t.Props.TrackName), "sign") || t.Props.Forced {
-				suffix = "_forced"
-			} else if i > 0 {
-				suffix = fmt.Sprintf("_%d", i)
-			}
+	// If no languages specified, use the main Lang field
+	languages := cfg.Languages
+	if len(languages) == 0 && cfg.Lang != "" {
+		languages = []string{cfg.Lang}
+	}
 
-			outName := fmt.Sprintf("%s_%s%s%s", epNum, cfg.Lang, suffix, ext)
-			outputPath := filepath.Join(subsDir, outName)
-			if err := execute(cfg, "mkvextract", path, "tracks", fmt.Sprintf("%d:%s", t.ID, outputPath)); err != nil {
-				return fmt.Errorf("subtitle extraction failed: %v", err)
+	// Extract subtitles for each requested language
+	for _, lang := range languages {
+		subsDir := filepath.Join(filepath.Dir(path), "subs", lang)
+		if !cfg.DryRun {
+			if err := os.MkdirAll(subsDir, os.ModePerm); err != nil {
+				return fmt.Errorf("failed to create subtitle directory: %v", err)
+			}
+		}
+
+		for i, t := range info.Tracks {
+			if t.Type == "subtitles" && (t.Props.Lang == lang || t.Props.Lang == "und") {
+				overallFound = true
+
+				ext := ".srt"
+				// Detect ASS format
+				if strings.Contains(strings.ToLower(t.Codec), "ass") || strings.Contains(strings.ToLower(t.Codec), "substationalpha") {
+					ext = ".ass"
+				}
+				// Handle forced/sign subtitle tracks
+				suffix := ""
+				if strings.Contains(strings.ToLower(t.Props.TrackName), "sign") || t.Props.Forced {
+					suffix = "_forced"
+				} else if i > 0 {
+					suffix = fmt.Sprintf("_%d", i)
+				}
+
+				outName := fmt.Sprintf("%s_%s%s%s", epNum, lang, suffix, ext)
+				outputPath := filepath.Join(subsDir, outName)
+				if err := execute(cfg, "mkvextract", path, "tracks", fmt.Sprintf("%d:%s", t.ID, outputPath)); err != nil {
+					return fmt.Errorf("subtitle extraction failed: %v", err)
+				}
 			}
 		}
 	}
 
-	if !found {
+	if !overallFound {
 		return fmt.Errorf("skipped")
 	}
 	return nil
 }
 
 // RunMerge merges subtitles back into an MKV file
-// If FastEdit is enabled and no external subtitles exist, uses mkvpropedit for speed
 func RunMerge(path string, cfg config.Config) error {
 	epNum := GetEpisodeNumber(filepath.Base(path))
 
@@ -127,38 +136,12 @@ func RunMerge(path string, cfg config.Config) error {
 		}
 	}
 
-	// Use fast mode if no external subtitles to merge
-	if cfg.FastEdit && !hasExternalSub {
-		return runPropEdit(path, cfg)
-	}
-
 	// Skip if no external subtitle found
 	if !hasExternalSub {
 		return fmt.Errorf("skipped")
 	}
 
 	return runMkvMergeStandard(path, subFile, subsSource, cfg)
-}
-
-// runPropEdit modifies track flags in-place without remuxing (fast metadata-only mode)
-func runPropEdit(path string, cfg config.Config) error {
-	args := []string{path, "--edit", "info", "--set", "title=" + strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))}
-
-	info, err := GetInfo(path)
-	if err != nil {
-		return err
-	}
-
-	for _, t := range info.Tracks {
-		if t.Type == "audio" || t.Type == "subtitles" {
-			// Remove default flag from all tracks first
-			args = append(args, "--edit", fmt.Sprintf("track:%d", t.ID), "--set", "flag-default=0")
-			if t.Props.Lang == cfg.Lang {
-				args = append(args, "--set", "flag-default=1", "--set", "flag-forced=0")
-			}
-		}
-	}
-	return execute(cfg, "mkvpropedit", args...)
 }
 
 func runMkvMergeStandard(path, subFile, subsSource string, cfg config.Config) error {

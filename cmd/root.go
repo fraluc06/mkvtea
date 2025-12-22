@@ -3,12 +3,14 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"mkvtea/internal/config"
 	"mkvtea/internal/mkv"
 	"mkvtea/internal/ui"
+	"mkvtea/internal/watcher"
 )
 
 var cfg config.Config
@@ -31,7 +33,7 @@ func init() {
 
 	// Performance & Advanced
 	rootCmd.PersistentFlags().IntVarP(&cfg.MaxProcs, "concurrency", "c", 2, "Max parallel workers (increase for SSDs)")
-	rootCmd.PersistentFlags().BoolVarP(&cfg.FastEdit, "fast", "f", false, "Use fast metadata-only mode (mkvpropedit, no remux)")
+	rootCmd.PersistentFlags().IntVarP(&cfg.CheckpointInterval, "checkpoint-interval", "", 10, "Save checkpoint every N files (0 to disable)")
 
 	// --- SUBCOMMANDS ---
 
@@ -44,6 +46,49 @@ func init() {
 	rootCmd.AddCommand(createCmd("merge", "m",
 		"(m) Merge subtitles and fonts back into MKV files",
 		"Merges external subtitles back into MKV files with proper language and default track settings.\nSupports audio track filtering and font embedding."))
+
+	// Watch (Alias: w)
+	rootCmd.AddCommand(createWatchCmd())
+}
+
+// createWatchCmd creates the watch command for directory monitoring
+func createWatchCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "watch [dir]",
+		Aliases: []string{"w"},
+		Short:   "(w) Watch directory for new MKV files and process automatically",
+		Long:    "Monitors a directory for new MKV files and automatically processes them.\nUseful for NAS/media servers with automatic downloads.",
+		Args:    cobra.MaximumNArgs(1),
+		Example: "  mkvtea watch /path/to/downloads -r -l ita\n  mkvtea w . -l eng,jpn",
+		Run: func(cmd *cobra.Command, args []string) {
+			cfg.Mode = "extract" // Watch mode defaults to extract
+			if len(args) > 0 {
+				cfg.Dir = args[0]
+			} else {
+				dir, err := os.Getwd()
+				if err != nil {
+					fmt.Printf("❌ Failed to get current directory: %v\n", err)
+					os.Exit(1)
+				}
+				cfg.Dir = dir
+			}
+
+			// Parse multiple languages
+			if cfg.Lang != "" {
+				cfg.Languages = strings.Split(cfg.Lang, ",")
+				// Trim whitespace from each language
+				for i, lang := range cfg.Languages {
+					cfg.Languages[i] = strings.TrimSpace(lang)
+				}
+			}
+
+			// Start watching
+			if err := watcher.WatchAndProcess(cfg.Dir, cfg); err != nil {
+				fmt.Printf("❌ Watch error: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	}
 }
 
 // createCmd generates extract/merge commands with proper descriptions
@@ -78,6 +123,15 @@ func processFiles(cfg config.Config) {
 	if err := mkv.ValidateDependencies(); err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
+	}
+
+	// Parse multiple languages from Lang flag (e.g., "ita,eng,jpn")
+	if cfg.Lang != "" {
+		cfg.Languages = strings.Split(cfg.Lang, ",")
+		// Trim whitespace from each language
+		for i, lang := range cfg.Languages {
+			cfg.Languages[i] = strings.TrimSpace(lang)
+		}
 	}
 
 	// Scan for MKV files
