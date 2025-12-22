@@ -1,0 +1,22 @@
+# IDE - IntelliJ
+.idea/
+
+# OS
+.DS_Store
+
+# Go binaries and outputs
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+mkvtea
+
+# Go workspace
+go.work
+go.work.sum
+
+# Environment
+.env
+
