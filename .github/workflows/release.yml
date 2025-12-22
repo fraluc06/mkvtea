@@ -66,6 +66,9 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
 
+        # Delete remote branch if it exists
+        git push origin --delete "$BRANCH_NAME" || true
+
         # Create and checkout release branch
         git checkout -b "$BRANCH_NAME"
 
