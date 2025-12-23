@@ -10,8 +10,7 @@ type Config struct {
 	SubsDir            string // Custom directory for external subtitles
 	Mode               string // "extract", "merge"
 	Recursive          bool
-	DryRun             bool
 	KeepAudio          string
-	MaxProcs           int // Concurrency workers
+	MaxProcs           int // Concurrency workers (auto-detected based on CPU count, 50% with min 2 and max 8)
 	CheckpointInterval int // Save checkpoint every N files (0 = disabled)
 }

@@ -7,7 +7,6 @@ func TestConfigDefaults(t *testing.T) {
 		Lang:      "ita",
 		MaxProcs:  2,
 		Recursive: false,
-		DryRun:    false,
 	}
 
 	if cfg.Lang != "ita" {
@@ -20,10 +19,6 @@ func TestConfigDefaults(t *testing.T) {
 
 	if cfg.Recursive != false {
 		t.Errorf("Expected Recursive to be false, got %v", cfg.Recursive)
-	}
-
-	if cfg.DryRun != false {
-		t.Errorf("Expected DryRun to be false, got %v", cfg.DryRun)
 	}
 }
 

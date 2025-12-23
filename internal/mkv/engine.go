@@ -39,13 +39,8 @@ Ensure they are in your PATH and try again.
 	return nil
 }
 
-// execute runs a command with optional dry-run mode
-// If DryRun is enabled, it skips execution and returns nil
+// execute runs a command
 func execute(cfg config.Config, command string, args ...string) error {
-	if cfg.DryRun {
-		return nil
-	}
-
 	cmd := exec.Command(command, args...)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s command failed: %v", command, err)
@@ -72,10 +67,8 @@ func RunExtract(path string, cfg config.Config) error {
 	// Extract subtitles for each requested language
 	for _, lang := range languages {
 		subsDir := filepath.Join(filepath.Dir(path), "subs", lang)
-		if !cfg.DryRun {
-			if err := os.MkdirAll(subsDir, os.ModePerm); err != nil {
-				return fmt.Errorf("failed to create subtitle directory: %v", err)
-			}
+		if err := os.MkdirAll(subsDir, os.ModePerm); err != nil {
+			return fmt.Errorf("failed to create subtitle directory: %v", err)
 		}
 
 		for i, t := range info.Tracks {
@@ -159,10 +152,8 @@ func runMkvMergeStandard(path, subFile, subsSource string, cfg config.Config) er
 	relPath, _ := filepath.Rel(cfg.Dir, path)
 	finalOutDir := filepath.Join(outRoot, filepath.Dir(relPath))
 
-	if !cfg.DryRun {
-		if err := os.MkdirAll(finalOutDir, os.ModePerm); err != nil {
-			return fmt.Errorf("failed to create output directory: %v", err)
-		}
+	if err := os.MkdirAll(finalOutDir, os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create output directory: %v", err)
 	}
 
 	args := []string{"-o", filepath.Join(finalOutDir, filepath.Base(path))}

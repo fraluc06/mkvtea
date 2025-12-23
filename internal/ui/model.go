@@ -138,8 +138,8 @@ func (m *ProcessModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ProcessingDoneMsg:
 		m.finished = true
-		// Auto-close after 5 seconds
-		m.autoCloseTime = time.Now().Add(5 * time.Second)
+		// Auto-close after 10 seconds
+		m.autoCloseTime = time.Now().Add(10 * time.Second)
 		return m, m.startAutoClose()
 
 	case AutoCloseMsg:

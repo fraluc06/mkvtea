@@ -50,11 +50,6 @@ func (m *ProcessModel) processFile(file string) {
 		err = mkv.RunMerge(file, m.cfg)
 	}
 
-	// Add delay in dry-run mode for UI readability
-	if m.cfg.DryRun {
-		time.Sleep(500 * time.Millisecond)
-	}
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

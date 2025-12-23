@@ -21,9 +21,6 @@ func (m *ProcessModel) View() string {
 	// === HEADER ===
 	mode := strings.ToUpper(m.cfg.Mode)
 	headerText := fmt.Sprintf("🍵 MKVTEA - %s", mode)
-	if m.cfg.DryRun {
-		headerText += " [DRY-RUN]"
-	}
 	header := titleStyle.Render(headerText)
 
 	// === STATS BOX ===
@@ -62,13 +59,7 @@ func (m *ProcessModel) View() string {
 		secondsLeft := int(remaining.Seconds()) + 1
 		footerText = warningStyle.Render(fmt.Sprintf("🔄 Window closes in %d second(s) | Press Q or Ctrl+C to exit now", secondsLeft))
 	} else {
-		var modeLabel string
-		if m.cfg.DryRun {
-			modeLabel = "DRY-RUN"
-		} else {
-			modeLabel = "Processing"
-		}
-		footerText = warningStyle.Render(fmt.Sprintf("⚡ %s (Ctrl+C to cancel)", modeLabel))
+		footerText = warningStyle.Render("⚡ Processing (Ctrl+C to cancel)")
 	}
 
 	// === SEPARATOR ===

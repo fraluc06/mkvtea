@@ -76,35 +76,5 @@ func RunProcessTUI(cfg config.Config, files []string) error {
 
 	fmt.Println("==================================================")
 
-	// Show DRY-RUN details
-	if cfg.DryRun {
-		fmt.Println()
-		fmt.Println("📋 DRY-RUN DETAILS (no files were modified):")
-
-		if cfg.Mode == "extract" && len(pm.extractedPaths) > 0 {
-			fmt.Println("   📁 Subtitles would be saved to:")
-			for _, path := range pm.extractedPaths {
-				fmt.Printf("      • %s/\n", path)
-			}
-			fmt.Printf("   🗂️  File naming: [episode]_[lang]_[track].[srt/ass]\n")
-		} else if cfg.Mode == "extract" {
-			fmt.Printf("   📁 Subtitles would be saved to: ./subs/%s/\n", cfg.Lang)
-		}
-
-		if cfg.Mode == "merge" {
-			if pm.outputDir != "" {
-				fmt.Printf("   📁 Output directory: %s/ (%d file(s))\n", pm.outputDir, pm.successCount)
-			}
-			if cfg.KeepAudio != "" {
-				fmt.Printf("   🔊 Audio: keeping only %s (removing others)\n", cfg.KeepAudio)
-			}
-			if cfg.SubsDir != "" {
-				fmt.Printf("   📝 Subtitles from: %s\n", cfg.SubsDir)
-			}
-		}
-
-		fmt.Println("==================================================")
-	}
-
 	return nil
 }

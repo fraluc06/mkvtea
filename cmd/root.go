@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -10,7 +11,6 @@ import (
 	"mkvtea/internal/config"
 	"mkvtea/internal/mkv"
 	"mkvtea/internal/ui"
-	"mkvtea/internal/watcher"
 )
 
 var cfg config.Config
@@ -29,11 +29,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&cfg.OutDir, "output", "o", "", "Custom output directory (optional)")
 	rootCmd.PersistentFlags().StringVarP(&cfg.SubsDir, "subs-dir", "s", "", "Custom directory for external subtitles (merge mode only)")
 	rootCmd.PersistentFlags().BoolVarP(&cfg.Recursive, "recursive", "r", false, "Recursively process all subdirectories")
-	rootCmd.PersistentFlags().BoolVarP(&cfg.DryRun, "dry-run", "d", false, "Simulate execution without modifying files")
 	rootCmd.PersistentFlags().StringVarP(&cfg.KeepAudio, "audio", "a", "", "Keep only this audio language (removes all others)")
-
-	// Performance & Advanced
-	rootCmd.PersistentFlags().IntVarP(&cfg.MaxProcs, "concurrency", "c", 2, "Max parallel workers (increase for SSDs)")
 	rootCmd.PersistentFlags().IntVarP(&cfg.CheckpointInterval, "checkpoint-interval", "", 10, "Save checkpoint every N files (0 to disable)")
 
 	// --- SUBCOMMANDS ---
@@ -47,49 +43,6 @@ func init() {
 	rootCmd.AddCommand(createCmd("merge", "m",
 		"(m) Merge subtitles and fonts back into MKV files",
 		"Merges external subtitles back into MKV files with proper language and default track settings.\nSupports audio track filtering and font embedding."))
-
-	// Watch (Alias: w)
-	rootCmd.AddCommand(createWatchCmd())
-}
-
-// createWatchCmd creates the watch command for directory monitoring
-func createWatchCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "watch [dir]",
-		Aliases: []string{"w"},
-		Short:   "(w) Watch directory for new MKV files and process automatically",
-		Long:    "Monitors a directory for new MKV files and automatically processes them.\nUseful for NAS/media servers with automatic downloads.",
-		Args:    cobra.MaximumNArgs(1),
-		Example: "  mkvtea watch /path/to/downloads -r -l ita\n  mkvtea w . -l eng,jpn",
-		Run: func(cmd *cobra.Command, args []string) {
-			cfg.Mode = "extract" // Watch mode defaults to extract
-			if len(args) > 0 {
-				cfg.Dir = args[0]
-			} else {
-				dir, err := os.Getwd()
-				if err != nil {
-					fmt.Printf("❌ Failed to get current directory: %v\n", err)
-					os.Exit(1)
-				}
-				cfg.Dir = dir
-			}
-
-			// Parse multiple languages
-			if cfg.Lang != "" {
-				cfg.Languages = strings.Split(cfg.Lang, ",")
-				// Trim whitespace from each language
-				for i, lang := range cfg.Languages {
-					cfg.Languages[i] = strings.TrimSpace(lang)
-				}
-			}
-
-			// Start watching
-			if err := watcher.WatchAndProcess(cfg.Dir, cfg); err != nil {
-				fmt.Printf("❌ Watch error: %v\n", err)
-				os.Exit(1)
-			}
-		},
-	}
 }
 
 // createCmd generates extract/merge commands with proper descriptions
@@ -118,12 +71,30 @@ func createCmd(mode, alias, short, long string) *cobra.Command {
 	}
 }
 
+// calculateOptimalWorkers calculates optimal number of parallel workers based on CPU count
+func calculateOptimalWorkers() int {
+	// Use 50% of available CPUs, with min 2 and max 8 for balance
+	maxProcs := runtime.NumCPU() / 2
+	if maxProcs < 2 {
+		maxProcs = 2
+	}
+	if maxProcs > 8 {
+		maxProcs = 8
+	}
+	return maxProcs
+}
+
 // processFiles processes MKV files based on the configuration
 func processFiles(cfg config.Config) {
 	// Validate dependencies first
 	if err := mkv.ValidateDependencies(); err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
+	}
+
+	// Auto-detect optimal worker count if not explicitly set
+	if cfg.MaxProcs == 0 {
+		cfg.MaxProcs = calculateOptimalWorkers()
 	}
 
 	// Parse multiple languages from Lang flag (e.g., "ita,eng,jpn")
