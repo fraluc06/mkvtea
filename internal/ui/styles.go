@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import "charm.land/lipgloss/v2"
 
 // Color Palette - Catppuccin Mocha
 // https://github.com/catppuccin/catppuccin

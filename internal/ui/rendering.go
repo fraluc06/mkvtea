@@ -7,7 +7,7 @@ import (
 
 // renderLogs renders the log entries, truncating filenames to fit the viewport
 func (m *ProcessModel) renderLogs() string {
-	availableWidth := m.viewport.Width
+	availableWidth := m.viewport.Width()
 	if availableWidth <= 20 {
 		availableWidth = 80 // fallback
 	}

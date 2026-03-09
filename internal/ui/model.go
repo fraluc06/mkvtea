@@ -1,14 +1,15 @@
 package ui
 
 import (
+	"fmt"
 	"mkvtea/internal/checkpoint"
 	"mkvtea/internal/config"
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 )
 
 // ProcessModel represents the TUI state during file processing
@@ -63,10 +64,14 @@ func NewProcessModel(cfg config.Config, files []string) *ProcessModel {
 	}
 	s.Style = subtitleStyle
 
-	vp := viewport.New(80, 15)
+	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(15))
 
 	// Initialize checkpoint manager
-	checkpointMgr, _ := checkpoint.NewManager(cfg)
+	logs := []string{}
+	checkpointMgr, err := checkpoint.NewManager(cfg)
+	if err != nil {
+		logs = append(logs, fmt.Sprintf("⚠️ CHECKPOINT: failed to initialize manager: %v", err))
+	}
 
 	return &ProcessModel{
 		cfg:           cfg,
@@ -74,7 +79,7 @@ func NewProcessModel(cfg config.Config, files []string) *ProcessModel {
 		totalFiles:    len(files),
 		spinner:       s,
 		viewport:      vp,
-		logs:          []string{},
+		logs:          logs,
 		sem:           make(chan struct{}, cfg.MaxProcs),
 		processedIdx:  0,
 		finished:      false,
@@ -84,6 +89,16 @@ func NewProcessModel(cfg config.Config, files []string) *ProcessModel {
 		height:        24, // Default, will be updated by WindowSizeMsg
 		checkpointMgr: checkpointMgr,
 	}
+}
+
+func (m *ProcessModel) logCheckpointWarning(format string, args ...any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.logCheckpointWarningLocked(format, args...)
+}
+
+func (m *ProcessModel) logCheckpointWarningLocked(format string, args ...any) {
+	m.logs = append(m.logs, fmt.Sprintf("⚠️ CHECKPOINT: "+format, args...))
 }
 
 func (m *ProcessModel) Init() tea.Cmd {
@@ -114,7 +129,7 @@ type WindowResizeMsg struct {
 
 func (m *ProcessModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" || msg.String() == "q" {
 			m.quitting = true
 			return m, tea.Quit
@@ -128,8 +143,8 @@ func (m *ProcessModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if viewportHeight < 3 {
 			viewportHeight = 3
 		}
-		m.viewport.Width = msg.Width - 4 // Reserve space for padding/borders
-		m.viewport.Height = viewportHeight
+		m.viewport.SetWidth(msg.Width - 4) // Reserve space for padding/borders
+		m.viewport.SetHeight(viewportHeight)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd

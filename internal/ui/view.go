@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // View renders the TUI display
-func (m *ProcessModel) View() string {
+func (m *ProcessModel) View() tea.View {
 	if m.quitting {
-		return ""
+		return tea.NewView("")
 	}
 
 	// Default width if not set
@@ -81,5 +83,7 @@ func (m *ProcessModel) View() string {
 		footerText,
 	)
 
-	return docStyle.Render(content)
+	v := tea.NewView(docStyle.Render(content))
+	v.AltScreen = true
+	return v
 }
