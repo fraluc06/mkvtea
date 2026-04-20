@@ -28,21 +28,23 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&cfg.Lang, "lang", "l", "ita", "Target subtitle language code (ita, eng, jpn, etc.)")
 	rootCmd.PersistentFlags().StringVarP(&cfg.OutDir, "output", "o", "", "Custom output directory (optional)")
 	rootCmd.PersistentFlags().StringVarP(&cfg.SubsDir, "subs-dir", "s", "", "Custom directory for external subtitles (merge mode only)")
+	rootCmd.PersistentFlags().StringVar(&cfg.AudioDir, "audio-dir", "", "Custom directory for external audio (merge mode only)")
 	rootCmd.PersistentFlags().BoolVarP(&cfg.Recursive, "recursive", "r", false, "Recursively process all subdirectories")
-	rootCmd.PersistentFlags().StringVarP(&cfg.KeepAudio, "audio", "a", "", "Keep only this audio language (removes all others)")
+	rootCmd.PersistentFlags().BoolVarP(&cfg.Audio, "audio", "a", false, "Extract or merge audio tracks of the target language")
+	rootCmd.PersistentFlags().StringVar(&cfg.KeepOnlyAudio, "keep-only-audio", "", "Keep only this audio language (removes all others)")
 	rootCmd.PersistentFlags().IntVarP(&cfg.CheckpointInterval, "checkpoint-interval", "", 10, "Save checkpoint every N files (0 to disable)")
 
 	// --- SUBCOMMANDS ---
 
 	// Extract (Alias: e)
 	rootCmd.AddCommand(createCmd("extract", "e",
-		"(e) Extract subtitles and fonts from MKV files",
-		"Extracts internal subtitles (SRT/ASS) and attached fonts from MKV files.\nOrganizes extracted files into a local 'subs' directory for each video."))
+		"(e) Extract subtitles, audio, and fonts from MKV files",
+		"Extracts internal subtitles (SRT/ASS), audio tracks, and attached fonts from MKV files.\nOrganizes extracted files into a local 'subs' directory for each video."))
 
 	// Merge (Alias: m)
 	rootCmd.AddCommand(createCmd("merge", "m",
-		"(m) Merge subtitles and fonts back into MKV files",
-		"Merges external subtitles back into MKV files with proper language and default track settings.\nSupports audio track filtering and font embedding."))
+		"(m) Merge subtitles, audio, and fonts back into MKV files",
+		"Merges external subtitles and audio tracks back into MKV files with proper language and default track settings.\nSupports audio track filtering and font embedding."))
 }
 
 // createCmd generates extract/merge commands with proper descriptions
@@ -53,7 +55,7 @@ func createCmd(mode, alias, short, long string) *cobra.Command {
 		Short:   short,
 		Long:    long,
 		Args:    cobra.MaximumNArgs(1),
-		Example: fmt.Sprintf("  mkvtea %s . -r -l eng\n  mkvtea %s /path/to/anime -r -a jpn", alias, alias),
+		Example: fmt.Sprintf("  mkvtea %s . -r -l ita -a\n  mkvtea %s /path/to/anime -r -l eng", alias, alias),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg.Mode = mode
 			if len(args) > 0 {

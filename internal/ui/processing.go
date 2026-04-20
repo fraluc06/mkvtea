@@ -63,7 +63,7 @@ func (m *ProcessModel) processFile(file string) {
 			logLine = fmt.Sprintf("⏭️  SKIPPED: %s", filename)
 			m.skippedCount++
 			if m.cfg.CheckpointInterval > 0 && m.checkpointMgr != nil {
-				if addErr := m.checkpointMgr.AddSkipped(file, "no subtitles"); addErr != nil {
+				if addErr := m.checkpointMgr.AddSkipped(file, "no assets found"); addErr != nil {
 					m.logCheckpointWarningLocked("failed to record skipped file %s: %v", filename, addErr)
 				}
 			}

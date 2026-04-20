@@ -6,14 +6,33 @@ import (
 	"strings"
 )
 
-// ScanFiles finds all .mkv files in the given directory, optionally recursive
-func ScanFiles(dir string, recursive bool) []string {
+func isVideoFile(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	return ext == ".mkv" || ext == ".mp4"
+}
+
+// ScanFiles finds all .mkv or .mp4 files in the given directory or a single file if specified
+func ScanFiles(path string, recursive bool) []string {
 	var files []string
 
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil
+	}
+
+	// If it's a single file
+	if !info.IsDir() {
+		if isVideoFile(path) {
+			return []string{path}
+		}
+		return nil
+	}
+
+	// If it's a directory
 	if recursive {
-		err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-			if err == nil && !d.IsDir() && strings.EqualFold(filepath.Ext(d.Name()), ".mkv") {
-				files = append(files, path)
+		err := filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+			if err == nil && !d.IsDir() && isVideoFile(d.Name()) {
+				files = append(files, p)
 			}
 			return nil
 		})
@@ -21,13 +40,13 @@ func ScanFiles(dir string, recursive bool) []string {
 			return nil
 		}
 	} else {
-		entries, err := os.ReadDir(dir)
+		entries, err := os.ReadDir(path)
 		if err != nil {
 			return files
 		}
 		for _, e := range entries {
-			if !e.IsDir() && strings.EqualFold(filepath.Ext(e.Name()), ".mkv") {
-				files = append(files, filepath.Join(dir, e.Name()))
+			if !e.IsDir() && isVideoFile(e.Name()) {
+				files = append(files, filepath.Join(path, e.Name()))
 			}
 		}
 	}
