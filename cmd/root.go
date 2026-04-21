@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -68,6 +69,14 @@ func createCmd(mode, alias, short, long string) *cobra.Command {
 				}
 				cfg.Dir = dir
 			}
+
+			// Ensure Dir is an absolute path to avoid issues with "." or relative paths
+			// when calculating output directory names.
+			absDir, err := filepath.Abs(cfg.Dir)
+			if err == nil {
+				cfg.Dir = absDir
+			}
+
 			processFiles(cfg)
 		},
 	}
