@@ -11,7 +11,7 @@ require (
 
 require (
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20260420095748-421e4a7fa8d7 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20260428141027-1f4ea3e216b9 // indirect
 	github.com/charmbracelet/x/ansi v0.11.7 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect

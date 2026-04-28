@@ -4,314 +4,164 @@ on:
   workflow_dispatch:
     inputs:
       version_number:
-        description: 'Version number (es. 0.1.0)'
+        description: 'Version number (e.g. 1.1.1)'
         required: true
         type: string
-  pull_request:
-    types: [closed]
-    branches:
-      - main
 
 jobs:
-  prepare-release:
-    if: github.event_name == 'workflow_dispatch'
+  release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
-      issues: write
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Validate version format
-      run: |
-        if [[ ! "${{ inputs.version_number }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "❌ Invalid version format. Use semantic versioning: x.y.z (es. 0.1.0)"
-          exit 1
-        fi
-        echo "✅ Version format validated: ${{ inputs.version_number }}"
+      - name: Validate version format
+        run: |
+          if [[ ! "${{ inputs.version_number }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version format. Use semantic versioning: x.y.z"
+            exit 1
+          fi
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.25'
+      - name: Verify version matches source
+        run: |
+          SOURCE_VERSION=$(grep -oP 'var Version = "\K[^"]+' internal/config/config.go)
+          if [ "$SOURCE_VERSION" != "${{ inputs.version_number }}" ]; then
+            echo "Version mismatch: source=$SOURCE_VERSION, input=${{ inputs.version_number }}"
+            echo "Update internal/config/config.go first and push to main."
+            exit 1
+          fi
+          echo "Version $SOURCE_VERSION verified"
 
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum', '**/go.mod') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
+      - name: Check tag does not exist
+        run: |
+          if git rev-parse "v${{ inputs.version_number }}" >/dev/null 2>&1; then
+            echo "Tag v${{ inputs.version_number }} already exists"
+            exit 1
+          fi
 
-    - name: Download dependencies
-      run: go mod download
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
 
-    - name: Run tests
-      run: go test -v ./...
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.0
 
-    - name: Run go vet
-      run: go vet ./...
+      - name: Run tests
+        run: go test -race ./...
 
-    - name: Create release branch and update version
-      run: |
-        BRANCH_NAME="release/v${{ inputs.version_number }}"
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
+      - name: Build for all platforms
+        run: |
+          VERSION="${{ inputs.version_number }}"
+          mkdir -p dist
 
-        # Delete remote branch if it exists
-        git push origin --delete "$BRANCH_NAME" || true
+          GOOS=linux   GOARCH=amd64 go build -ldflags="-s -w -X mkvtea/internal/config.Version=$VERSION" -o dist/mkvtea-linux-amd64 .
+          GOOS=linux   GOARCH=arm64 go build -ldflags="-s -w -X mkvtea/internal/config.Version=$VERSION" -o dist/mkvtea-linux-arm64 .
+          GOOS=darwin  GOARCH=amd64 go build -ldflags="-s -w -X mkvtea/internal/config.Version=$VERSION" -o dist/mkvtea-darwin-amd64 .
+          GOOS=darwin  GOARCH=arm64 go build -ldflags="-s -w -X mkvtea/internal/config.Version=$VERSION" -o dist/mkvtea-darwin-arm64 .
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X mkvtea/internal/config.Version=$VERSION" -o dist/mkvtea-windows-amd64.exe .
 
-        # Create and checkout release branch
-        git checkout -b "$BRANCH_NAME"
+      - name: Smoke test
+        run: |
+          chmod +x dist/mkvtea-linux-amd64
+          OUTPUT=$(./dist/mkvtea-linux-amd64 --version 2>&1)
+          echo "$OUTPUT"
+          echo "$OUTPUT" | grep -q "${{ inputs.version_number }}" || {
+            echo "Smoke test failed: version not found in output"
+            exit 1
+          }
 
-        # Update version in config
-        sed -i 's/const Version = ".*"/const Version = "${{ inputs.version_number }}"/' internal/config/config.go
+      - name: Create checksums
+        run: cd dist && sha256sum * > checksums.txt
 
-        # Commit and push branch
-        git add internal/config/config.go
-        git commit -m "chore: bump version to ${{ inputs.version_number }}"
-        git push -u origin "$BRANCH_NAME"
+      - name: Create tag
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a "v${{ inputs.version_number }}" -m "Release v${{ inputs.version_number }}"
+          git push origin "v${{ inputs.version_number }}"
 
-    - name: Create or verify release label
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        # Create the label if it doesn't exist
-        gh label create "release" \
-          --description "Release PR" \
-          --color "FF6B6B" || true
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 "v${{ inputs.version_number }}^" 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            echo "Initial release" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            {
+              echo "changelog<<EOF"
+              echo "**Changes since $PREV_TAG:**"
+              echo ""
+              git log --oneline --no-merges "$PREV_TAG..HEAD"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          fi
 
-    - name: Create Pull Request
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        BRANCH_NAME: release/v${{ inputs.version_number }}
-      run: |
-         # Check if PR already exists
-         existing_pr=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' || echo "")
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version_number }}
+          name: MKVTea v${{ inputs.version_number }}
+          body: |
+            ${{ steps.changelog.outputs.changelog }}
 
-         if [ -n "$existing_pr" ]; then
-           echo "PR #$existing_pr already exists, skipping creation"
-           exit 0
-         fi
+            ### Installation
 
-         gh pr create \
-           --title "🚀 Release v${{ inputs.version_number }}" \
-           --body "## 🔥 Release v${{ inputs.version_number }}
+            #### Linux (amd64)
+            ```
+            wget https://github.com/${{ github.repository }}/releases/download/v${{ inputs.version_number }}/mkvtea-linux-amd64
+            chmod +x mkvtea-linux-amd64 && sudo mv mkvtea-linux-amd64 /usr/local/bin/mkvtea
+            ```
 
-         This PR prepares the release for version **v${{ inputs.version_number }}**.
+            #### Linux (arm64)
+            ```
+            wget https://github.com/${{ github.repository }}/releases/download/v${{ inputs.version_number }}/mkvtea-linux-arm64
+            chmod +x mkvtea-linux-arm64 && sudo mv mkvtea-linux-arm64 /usr/local/bin/mkvtea
+            ```
 
-         ### 📋 Changes in this release
+            #### macOS (Apple Silicon)
+            ```
+            curl -L https://github.com/${{ github.repository }}/releases/download/v${{ inputs.version_number }}/mkvtea-darwin-arm64 -o mkvtea
+            chmod +x mkvtea && sudo mv mkvtea /usr/local/bin/
+            ```
 
-         - Version bump to ${{ inputs.version_number }}
-         - Automated release build
+            #### macOS (Intel)
+            ```
+            curl -L https://github.com/${{ github.repository }}/releases/download/v${{ inputs.version_number }}/mkvtea-darwin-amd64 -o mkvtea
+            chmod +x mkvtea && sudo mv mkvtea /usr/local/bin/
+            ```
 
-         ### ✅ Checklist
+            #### Windows
+            ```powershell
+            Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/v${{ inputs.version_number }}/mkvtea-windows-amd64.exe" -OutFile "mkvtea.exe"
+            ```
 
-         - [x] Tests passed
-         - [x] Version updated in code
-         - [x] Build artifacts ready
+            #### Verify checksums
+            ```
+            sha256sum -c checksums.txt
+            ```
+          files: |
+            dist/mkvtea-linux-amd64
+            dist/mkvtea-linux-arm64
+            dist/mkvtea-darwin-amd64
+            dist/mkvtea-darwin-arm64
+            dist/mkvtea-windows-amd64.exe
+            dist/checksums.txt
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-         ### 🎯 Next Steps
-
-         1. Review the changes
-         2. Merge this PR
-         3. The release will be automatically created after merge
-
-         ---
-
-         🤖 Auto-generated by GitHub Actions" \
-           --base main \
-           --head "$BRANCH_NAME" \
-           --label "release" \
-           --assignee "${{ github.actor }}"
-
-  create-release:
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'release')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Extract version from PR
-      id: version
-      run: |
-        VERSION="${{ github.event.pull_request.head.ref }}"
-        VERSION="${VERSION#release/v}"
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Extracted version: $VERSION"
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.25'
-
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum', '**/go.mod') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-
-    - name: Download dependencies
-      run: go mod download
-
-    - name: Run tests
-      run: go test -v ./...
-
-    - name: Run go vet
-      run: go vet ./...
-
-    - name: Build for multiple platforms
-      run: |
-        VERSION="${{ steps.version.outputs.version }}"
-        mkdir -p dist
-
-        # Linux
-        GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X mkvtea/internal/config.Version=$VERSION" -o dist/mkvtea-linux-amd64
-        GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X mkvtea/internal/config.Version=$VERSION" -o dist/mkvtea-linux-arm64
-
-        # macOS
-        GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w -X mkvtea/internal/config.Version=$VERSION" -o dist/mkvtea-darwin-amd64
-        GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w -X mkvtea/internal/config.Version=$VERSION" -o dist/mkvtea-darwin-arm64
-
-        # Windows
-        GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X mkvtea/internal/config.Version=$VERSION" -o dist/mkvtea-windows-amd64.exe
-
-    - name: Create checksums
-      run: |
-        cd dist
-        sha256sum mkvtea-linux-amd64 > checksums.txt
-        sha256sum mkvtea-linux-arm64 >> checksums.txt
-        sha256sum mkvtea-darwin-amd64 >> checksums.txt
-        sha256sum mkvtea-darwin-arm64 >> checksums.txt
-        sha256sum mkvtea-windows-amd64.exe >> checksums.txt
-
-    - name: Create and push tag
-      run: |
-        TAG_NAME="v${{ steps.version.outputs.version }}"
-        echo "Creating tag: $TAG_NAME"
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
-        git push origin "$TAG_NAME"
-
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: v${{ steps.version.outputs.version }}
-        name: "MKVTea v${{ steps.version.outputs.version }}"
-        body: |
-          ## 🔥 MKVTea v${{ steps.version.outputs.version }}
-
-          Advanced MKV Tool with TUI for batch processing anime/TV series libraries.
-
-          ### 🚀 Installation
-
-          #### Linux (amd64)
-          ```bash
-          wget https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/mkvtea-linux-amd64
-          chmod +x mkvtea-linux-amd64
-          sudo mv mkvtea-linux-amd64 /usr/local/bin/mkvtea
-          ```
-
-          #### Linux (arm64)
-          ```bash
-          wget https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/mkvtea-linux-arm64
-          chmod +x mkvtea-linux-arm64
-          sudo mv mkvtea-linux-arm64 /usr/local/bin/mkvtea
-          ```
-
-          #### macOS (Apple Silicon - M1/M2/M3)
-          ```bash
-          curl -L https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/mkvtea-darwin-arm64 -o mkvtea
-          chmod +x mkvtea
-          sudo mv mkvtea /usr/local/bin/
-          ```
-
-          #### macOS (Intel)
-          ```bash
-          curl -L https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/mkvtea-darwin-amd64 -o mkvtea
-          chmod +x mkvtea
-          sudo mv mkvtea /usr/local/bin/
-          ```
-
-          #### Windows (PowerShell)
-          ```powershell
-          Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/mkvtea-windows-amd64.exe" -OutFile "mkvtea.exe"
-          ```
-
-          #### Using Go
-          ```bash
-          go install github.com/${{ github.repository }}@v${{ steps.version.outputs.version }}
-          ```
-
-          ### ✅ Verify Installation
-
-          After installation, verify with:
-          ```bash
-          mkvtea --version
-          ```
-
-          ### 🔒 Verify Checksums
-
-          Download `checksums.txt` and verify:
-          ```bash
-          sha256sum -c checksums.txt
-          ```
-
-          ### 📦 Requirements
-
-          - `mkvmerge`, `mkvextract`, `mkvpropedit` (from MKVToolNix)
-          - Go 1.25+ (if building from source)
-
-        files: |
-          dist/mkvtea-linux-amd64
-          dist/mkvtea-linux-arm64
-          dist/mkvtea-darwin-amd64
-          dist/mkvtea-darwin-arm64
-          dist/mkvtea-windows-amd64.exe
-          dist/checksums.txt
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Delete release branch
-      if: success()
-      run: |
-        git push origin --delete release/v${{ steps.version.outputs.version }}
-
-    - name: Release summary
-      run: |
-        echo "## 🎉 Release Completed Successfully!" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Version:** v${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-        echo "**Tag:** [v${{ steps.version.outputs.version }}](https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version.outputs.version }})" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 📦 Downloads:" >> $GITHUB_STEP_SUMMARY
-        echo "- [Linux amd64](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/mkvtea-linux-amd64)" >> $GITHUB_STEP_SUMMARY
-        echo "- [Linux arm64](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/mkvtea-linux-arm64)" >> $GITHUB_STEP_SUMMARY
-        echo "- [macOS Intel](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/mkvtea-darwin-amd64)" >> $GITHUB_STEP_SUMMARY
-        echo "- [macOS Apple Silicon](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/mkvtea-darwin-arm64)" >> $GITHUB_STEP_SUMMARY
-        echo "- [Windows](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/mkvtea-windows-amd64.exe)" >> $GITHUB_STEP_SUMMARY
-        echo "- [Checksums](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/checksums.txt)" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### ✅ Verify Installation:" >> $GITHUB_STEP_SUMMARY
-        echo '```bash' >> $GITHUB_STEP_SUMMARY
-        echo "mkvtea --version" >> $GITHUB_STEP_SUMMARY
-        echo '```' >> $GITHUB_STEP_SUMMARY
+      - name: Release summary
+        run: |
+          echo "## v${{ inputs.version_number }} released" >> $GITHUB_STEP_SUMMARY
+          echo "[View release](https://github.com/${{ github.repository }}/releases/tag/v${{ inputs.version_number }})" >> $GITHUB_STEP_SUMMARY

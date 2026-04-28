@@ -1,6 +1,6 @@
 package config
 
-const Version = "1.1.1"
+var Version = "1.1.0"
 
 type Config struct {
 	Dir                string
