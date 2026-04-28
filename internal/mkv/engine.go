@@ -22,8 +22,7 @@ func ValidateDependencies() error {
 	}
 
 	if len(missingTools) > 0 {
-		return fmt.Errorf(`
-❌ Missing required MKV tools: %s
+		return fmt.Errorf(`❌ Missing required MKV tools: %s
 
 These tools are part of MKVToolNix suite. Install with:
 
@@ -32,8 +31,7 @@ These tools are part of MKVToolNix suite. Install with:
   Fedora: sudo dnf install mkvtoolnix
   Arch:   sudo pacman -S mkvtoolnix-cli
 
-Ensure they are in your PATH and try again.
-`, strings.Join(missingTools, ", "))
+Ensure they are in your PATH and try again.`, strings.Join(missingTools, ", "))
 	}
 
 	return nil

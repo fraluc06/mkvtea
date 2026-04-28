@@ -86,7 +86,8 @@ func (m *ProcessModel) processFile(file string) {
 		}
 
 		// Track output paths for DRY-RUN summary
-		if m.cfg.Mode == "extract" {
+		switch m.cfg.Mode {
+		case "extract":
 			lang := m.cfg.Lang
 			if len(m.cfg.Languages) > 0 {
 				lang = m.cfg.Languages[0]
@@ -95,7 +96,7 @@ func (m *ProcessModel) processFile(file string) {
 			if !contains(m.extractedPaths, subsDir) {
 				m.extractedPaths = append(m.extractedPaths, subsDir)
 			}
-		} else if m.cfg.Mode == "merge" {
+		case "merge":
 			outRoot := m.cfg.OutDir
 			if outRoot == "" {
 				lang := m.cfg.Lang

@@ -17,7 +17,6 @@ type ProcessModel struct {
 	// Config
 	cfg   config.Config
 	files []string
-	mode  string // "extract" or "merge"
 
 	// Progress tracking
 	totalFiles   int

@@ -251,7 +251,7 @@ func (m *Manager) Clear() error {
 // hashFilename generates a simple hash of the filename for reliable matching
 func hashFilename(filename string) string {
 	h := md5.New()
-	io.WriteString(h, strings.ToLower(filepath.Base(filename)))
+	_, _ = io.WriteString(h, strings.ToLower(filepath.Base(filename)))
 	return fmt.Sprintf("%x", h.Sum(nil))[:16]
 }
 
