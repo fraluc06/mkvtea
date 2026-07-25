@@ -1,6 +1,8 @@
 package config
 
-var Version = "1.1.2"
+// Version is injected at build time via -ldflags "-X mkvtea/internal/config.Version=...".
+// The git tag is the single source of truth; local builds fall back to "dev".
+var Version = "dev"
 
 type Config struct {
 	Dir                string

@@ -11,6 +11,11 @@
 - `docker compose build` - Build Docker image (mkvtea:local)
 - `docker compose run --rm mkvtea <args>` - Run mkvtea in a container (/data volume)
 
+## Release Process
+- Tag-driven: `git tag vX.Y.Z && git push origin vX.Y.Z` triggers `.github/workflows/release.yml`
+- The tag is the single source of truth for the version; it is injected via `-ldflags -X mkvtea/internal/config.Version=...` (config.go stays at "dev")
+- The workflow tests, cross-builds 5 platforms, creates the GitHub Release with changelog + checksums, and pushes the multi-arch image to GHCR
+
 ## Code Style Guidelines
 
 ### Imports & Formatting
