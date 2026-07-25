@@ -1,0 +1,39 @@
+# mkvtea is a one-shot CLI, not a daemon — build once, then invoke it with
+# `docker compose run` (or plain docker: docker run --rm -it -v mkvtea-data:/data mkvtea:local ...):
+#
+#   # Build the image:
+#   docker compose build
+#
+#   # Extract subtitles/fonts from every MKV under /data (recursively):
+#   docker compose run --rm mkvtea extract /data -r -l ita
+#
+#   # Merge subtitles back into the MKVs, keeping only Japanese audio:
+#   docker compose run --rm mkvtea merge /data -r -l ita -a jpn
+#
+#   # Interactive shell instead of the TUI:
+#   docker compose run --rm --entrypoint /bin/sh mkvtea
+
+services:
+  mkvtea:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev} # baked into the binary via -ldflags
+    image: mkvtea:local
+    working_dir: /data
+
+    # /data is where mkvtea looks for MKV files. The named volume persists the
+    # .mkvtea_checkpoint.json across runs so interrupted jobs can resume.
+    # To process a real media library on the host, bind-mount it instead, e.g.:
+    #   - /Volumes/media/anime:/data
+    # (the directory must be writable by the container's mkvtea user)
+    volumes:
+      - mkvtea-data:/data
+
+    # Required for the BubbleTea TUI: without an allocated terminal, keys like
+    # 'q' / ctrl+c never reach the app and colors are stripped.
+    tty: true
+    stdin_open: true
+
+volumes:
+  mkvtea-data:

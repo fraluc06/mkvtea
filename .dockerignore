@@ -1,0 +1,26 @@
+# VCS / IDE
+.git
+.gitignore
+.github
+.idea
+.DS_Store
+
+# Docs & local tooling (not needed to build the binary)
+*.md
+mise.toml
+droast.toml
+Dockerfile
+docker-compose.yml
+
+# Local build artifacts
+mkvtea
+*.exe
+*.test
+*.out
+
+# Runtime data / secrets
+data/
+.env
+
+assets
+LICENSE

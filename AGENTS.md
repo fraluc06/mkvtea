@@ -7,6 +7,9 @@
 - `go fmt ./...` - Format all code
 - `go vet ./...` - Lint checks
 - `go mod tidy` - Clean dependencies
+- `droast --no-roast .` - Lint Dockerfile (project config in droast.toml)
+- `docker compose build` - Build Docker image (mkvtea:local)
+- `docker compose run --rm mkvtea <args>` - Run mkvtea in a container (/data volume)
 
 ## Code Style Guidelines
 
