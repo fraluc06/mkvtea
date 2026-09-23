@@ -1,70 +1,135 @@
-# AGENTS.md - MKVTea Development Guide
+# MKVTea
 
-## Build & Test Commands
-- `go build -o ./mkvtea` - Build binary
-- `go test ./...` - Run all tests
-- `go test -v ./internal/mkv -run TestName` - Run single test
-- `go fmt ./...` - Format all code
-- `go vet ./...` - Lint checks
-- `go mod tidy` - Clean dependencies
-- `droast --no-roast .` - Lint Dockerfile (project config in droast.toml)
-- `docker compose build` - Build Docker image (mkvtea:local)
-- `docker compose run --rm mkvtea <args>` - Run mkvtea in a container (/data volume)
+A blazing-fast batch processing CLI with a BubbleTea TUI for extracting/merging subtitles, audio tracks, and fonts in Anime/TV series MKV libraries.
 
-## Release Process
-- Tag-driven: `git tag vX.Y.Z && git push origin vX.Y.Z` triggers `.github/workflows/release.yml`
-- The tag is the single source of truth for the version; it is injected via `-ldflags -X mkvtea/internal/config.Version=...` (config.go stays at "dev")
-- The workflow tests, cross-builds 5 platforms, creates the GitHub Release with changelog + checksums, and pushes the multi-arch image to GHCR
+## Development Setup
 
-## Code Style Guidelines
+```bash
+# Toolchain (optional, mise pins Go)
+mise install
 
-### Imports & Formatting
-- Order: stdlib → external → internal (blank lines between groups)
-- Use `gofmt` before every commit
-- No import aliases unless necessary
+# Dependencies
+go mod download
+
+# Development
+go run . extract /path/to/dir -r -l ita
+
+# Build
+go build -o ./mkvtea
+
+# Tests
+go test ./...          # add -race for the concurrency-sensitive TUI code
+```
+
+## Tech Layers
+
+- **Framework**: Cobra (CLI commands/flags) + BubbleTea v2 (TUI)
+- **Language**: Go 1.25+ (go.mod toolchain; mise pins Go 1.26)
+- **Styling**: Lipgloss v2 with the Catppuccin Mocha palette (`internal/ui/styles.go`)
+- **Database**: None — state lives in `.mkvtea_checkpoint.json` (atomic temp-file + rename) inside the scanned directory
+- **Testing**: stdlib `testing` with table-driven tests, no external assertion libs
+
+## Project Structure
+
+```
+main.go                  # Entry point, only calls cmd.Execute()
+cmd/
+├── root.go              # Cobra root command, flags, extract/merge factory, processFiles
+├── scanner.go           # ScanFiles: finds .mkv/.mp4 (case-insensitive), recursive or not
+└── scanner_test.go
+internal/
+├── config/
+│   ├── config.go        # Config struct + Version (injected via -ldflags)
+│   └── config_test.go
+├── mkv/
+│   ├── engine.go        # RunExtract/RunMerge, mkvmerge/mkvextract invocation, ErrSkipped
+│   ├── metadata.go      # GetInfo: parses mkvmerge -J JSON (Track, Attachment, Info)
+│   ├── parser.go        # GetEpisodeNumber: episode regex, compiled once at package level
+│   └── *_test.go
+├── ui/
+│   ├── model.go         # ProcessModel state + Init/Update
+│   ├── processing.go    # Worker goroutines, semaphore, checkpoint recording
+│   ├── rendering.go     # Log truncation (rune-safe) + progress bar
+│   ├── view.go          # View layout (holds m.mu while rendering)
+│   ├── processor.go     # RunProcessTUI entry point, resume prompt, final summary
+│   └── styles.go        # Lipgloss styles
+└── checkpoint/
+    └── checkpoint.go    # Checkpoint Manager: load/save/resume, MD5-based file matching
+```
+
+## Code Standards
+
+### General Rules
+- Import order: stdlib → external → internal, blank lines between groups
+- Run `gofmt ./...` and `go vet ./...` before committing
+- Handle every error explicitly — no `_ = err`; wrap with `fmt.Errorf("context: %w", err)`
+- Match sentinel errors with `errors.Is` (e.g., `mkv.ErrSkipped`), never `err.Error() == "..."`
+- Write tests for new features (table-driven where possible)
 
 ### Naming Conventions
-- **Packages**: lowercase, single word (config, mkv, ui)
-- **Types**: PascalCase (Config, MkvInfo, ProcessModel)
-- **Functions**: PascalCase exported, camelCase unexported
-- **Variables**: camelCase locals, PascalCase exported constants
-- **Constants**: ALL_CAPS with underscores
-- **Interface methods**: Receiver pointers for Update/modification operations
+- Packages: lowercase, single word (config, mkv, ui, checkpoint)
+- Types: PascalCase (Config, Info, ProcessModel)
+- Functions: PascalCase exported with doc comment starting with the name, camelCase unexported
+- Variables: camelCase locals
+- Constants: camelCase for unexported (e.g., `autoCloseDelay`); doc comment explains "why", not "what"
 
-### Error Handling
-- Always handle errors explicitly (no `_ = err`)
-- Return `error` as last parameter
-- Wrap errors with context before returning
-- Early returns on errors (no nested conditionals)
+### File Organization
+- One responsibility per file, target 50–150 LOC (see tree above for the split)
+- Tests colocated as `*_test.go` next to the code they cover
+- Keep `main.go` minimal; all logic lives in `cmd/` or `internal/`
 
-### Project Structure
-- `cmd/` - CLI entry point (Cobra commands) + file scanning
-- `internal/config/` - Configuration struct
-- `internal/mkv/` - Core MKV processing (engine, metadata, parser)
-- `internal/ui/` - BubbleTea TUI (model, view, processor, styles)
+## Important Patterns
 
-### File Organization by Responsibility
-- `engine.go` (228 LOC) - Core extract/merge logic
-- `metadata.go` (60 LOC) - GetInfo + JSON structs (Track, Attachment, MkvInfo)
-- `parser.go` (14 LOC) - Episode number extraction
-- `model.go` (142 LOC) - ProcessModel struct + Init/Update/lifecycle
-- `processing.go` (92 LOC) - File processing logic + concurrency
-- `rendering.go` (82 LOC) - Log and progress bar rendering
-- `view.go` (94 LOC) - View rendering method
-- `processor.go` (68 LOC) - RunProcessTUI entry point
-- Target: 50-150 LOC per file for clarity and maintainability
+### External Tool Invocation
+All MKV work goes through `mkvmerge`/`mkvextract`/`mkvpropedit` via `os/exec`; validate availability first:
+```go
+if err := mkv.ValidateDependencies(); err != nil {
+    return err // multi-line install instructions, printed once by Execute
+}
+```
 
-### BubbleTea Patterns
-- Update: handles messages, returns (Model, Cmd). View: renders state (string)
-- Use pointer receivers for Update methods
-- Follow tea.Msg patterns for custom messages
+### State Management
+- `ProcessModel` is the single source of truth for TUI state
+- Worker goroutines mutate `logs`/counters/`viewport` only while holding `m.mu`
+- `View` and `Update` (WindowSizeMsg/quit paths) must also hold `m.mu` when touching shared state — the BubbleTea renderer runs on its own goroutine
+- Concurrency = buffered semaphore channel (`m.sem`) + `sync.WaitGroup`, worker count from `min(max(NumCPU/2, 2), 8)`
 
-### Dependencies
-- **TUI**: charmbracelet/bubbletea, bubbles, lipgloss
-- **CLI**: spf13/cobra
-- **External**: mkvmerge, mkvextract, mkvpropedit (os/exec)
+## Testing Guidelines
 
-### Language & Documentation
-- All code comments and identifiers in English
-- Comments explain "why" not "what" (code shows what)
-- Exported functions must have doc comments starting with function name
+- Write tests alongside implementation (`scanner_test.go`, `parser_test.go`, `metadata_test.go` are the models to follow)
+- Focus on behavior: extension case-insensitivity, episode-number formats, JSON struct mapping
+- Use `t.TempDir()` for filesystem fixtures; never touch the real filesystem outside it
+- Run `go test -race ./...` before merging — the TUI shares state across goroutines
+
+## Common Pitfalls to Avoid
+
+- DON'T: Call `os.Exit` inside `RunE` — return the error and let `Execute` handle it
+- DON'T: Byte-slice log lines — prefixes contain multi-byte emoji; use `strings.CutPrefix` and rune-aware truncation
+- DON'T: Duplicate timing constants — the auto-close countdown and timer share `autoCloseDelay`
+- DON'T: Compile regexes inside functions — hoist them to package level (see `episodePattern`)
+- DON'T: Skip `gofmt`/`go vet` for "simple" changes
+- DO: Check `internal/mkv` helpers (`getAudioExtension`, `isAudioExt`) before adding new ones
+- DO: Keep `%w` for wrapped errors, `%q` for paths in error messages
+- DO: Keep functions small and focused
+
+## Performance Considerations
+
+- Worker count auto-detected: 50% of CPUs, clamped to [2, 8]; overridable via config
+- Process-level parallelism only — MKVToolNix does the heavy I/O, Go coordinates
+- Preallocate slices when size is known (`make([]string, 0, len(files))`)
+- Checkpoint saves are throttled by `--checkpoint-interval` (default every 10 files), not per file
+
+## Deployment
+
+- Tag-driven: `git tag vX.Y.Z && git push origin vX.Y.Z` triggers `.github/workflows/release.yml`
+- The tag is the single source of truth for the version, injected via `-ldflags -X mkvtea/internal/config.Version=...` (`config.go` stays at "dev")
+- The workflow tests, cross-builds 5 platforms, creates the GitHub Release with changelog + checksums, and pushes the multi-arch image to GHCR
+- Local Docker: `docker compose build` → `mkvtea:local`; run via `docker compose run --rm mkvtea <args>` (needs `tty: true` for the TUI; media goes in the `/data` volume)
+- Lint the Dockerfile with `droast --no-roast .` (config in `droast.toml`)
+
+## Additional Resources
+
+- Usage, screenshots, and install instructions: `README.md`
+- CI pipeline: `.github/workflows/CI.yml`
+- Release pipeline: `.github/workflows/release.yml`
+- Docker setup and volume notes: `docker-compose.yml` (header comments)
