@@ -10,6 +10,11 @@ import (
 
 // View renders the TUI display
 func (m *ProcessModel) View() tea.View {
+	// Worker goroutines mutate logs, counters, and the viewport under m.mu;
+	// hold it while rendering to avoid data races.
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.quitting {
 		return tea.NewView("")
 	}

@@ -18,10 +18,13 @@ var cfg config.Config
 
 // --- ROOT COMMAND ---
 var rootCmd = &cobra.Command{
-	Use:     "mkvtea",
-	Short:   "🍵 Advanced MKV Tool with TUI (Extract/Merge)",
-	Long:    `MKVTea is a blazing fast batch processing tool for managing your Anime/TV Series library.`,
-	Version: config.Version,
+	Use:   "mkvtea",
+	Short: "🍵 Advanced MKV Tool with TUI (Extract/Merge)",
+	Long:  `MKVTea is a blazing fast batch processing tool for managing your Anime/TV Series library.`,
+	// Errors are printed once by Execute; usage spam on runtime errors is noise.
+	Version:       config.Version,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 func init() {
@@ -57,15 +60,14 @@ func createCmd(mode, alias, short, long string) *cobra.Command {
 		Long:    long,
 		Args:    cobra.MaximumNArgs(1),
 		Example: fmt.Sprintf("  mkvtea %s . -r -l ita -a\n  mkvtea %s /path/to/anime -r -l eng", alias, alias),
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg.Mode = mode
 			if len(args) > 0 {
 				cfg.Dir = args[0]
 			} else {
 				dir, err := os.Getwd()
 				if err != nil {
-					fmt.Printf("❌ Failed to get current directory: %v\n", err)
-					os.Exit(1)
+					return fmt.Errorf("failed to get current directory: %w", err)
 				}
 				cfg.Dir = dir
 			}
@@ -73,11 +75,12 @@ func createCmd(mode, alias, short, long string) *cobra.Command {
 			// Ensure Dir is an absolute path to avoid issues with "." or relative paths
 			// when calculating output directory names.
 			absDir, err := filepath.Abs(cfg.Dir)
-			if err == nil {
-				cfg.Dir = absDir
+			if err != nil {
+				return fmt.Errorf("failed to resolve path %q: %w", cfg.Dir, err)
 			}
+			cfg.Dir = absDir
 
-			processFiles(cfg)
+			return processFiles(cfg)
 		},
 	}
 }
@@ -85,22 +88,14 @@ func createCmd(mode, alias, short, long string) *cobra.Command {
 // calculateOptimalWorkers calculates optimal number of parallel workers based on CPU count
 func calculateOptimalWorkers() int {
 	// Use 50% of available CPUs, with min 2 and max 8 for balance
-	maxProcs := runtime.NumCPU() / 2
-	if maxProcs < 2 {
-		maxProcs = 2
-	}
-	if maxProcs > 8 {
-		maxProcs = 8
-	}
-	return maxProcs
+	return min(max(runtime.NumCPU()/2, 2), 8)
 }
 
 // processFiles processes MKV files based on the configuration
-func processFiles(cfg config.Config) {
+func processFiles(cfg config.Config) error {
 	// Validate dependencies first
 	if err := mkv.ValidateDependencies(); err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
 
 	// Auto-detect optimal worker count if not explicitly set
@@ -122,18 +117,19 @@ func processFiles(cfg config.Config) {
 
 	if len(files) == 0 {
 		fmt.Printf("❌ No MKV files found in: %s\n", cfg.Dir)
-		return
+		return nil
 	}
 
 	// Launch TUI processor
 	if err := ui.RunProcessTUI(cfg, files); err != nil {
-		fmt.Printf("❌ Processing error: %v\n", err)
+		return fmt.Errorf("processing: %w", err)
 	}
+	return nil
 }
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }

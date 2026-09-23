@@ -2,14 +2,15 @@ package ui
 
 import (
 	"fmt"
-	"mkvtea/internal/checkpoint"
-	"mkvtea/internal/config"
 	"sync"
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+
+	"mkvtea/internal/checkpoint"
+	"mkvtea/internal/config"
 )
 
 // ProcessModel represents the TUI state during file processing
@@ -110,31 +111,19 @@ type ProcessingDoneMsg struct{}
 // AutoCloseMsg signals that the TUI should auto-close
 type AutoCloseMsg struct{}
 
-// contains checks if a slice contains a specific string
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
-// WindowResizeMsg signals a terminal window resize
-type WindowResizeMsg struct {
-	Width  int
-	Height int
-}
-
 func (m *ProcessModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" || msg.String() == "q" {
+			m.mu.Lock()
 			m.quitting = true
+			m.mu.Unlock()
 			return m, tea.Quit
 		}
 
 	case tea.WindowSizeMsg:
+		// Worker goroutines also touch the viewport under m.mu.
+		m.mu.Lock()
 		m.width = msg.Width
 		m.height = msg.Height
 		// Adjust viewport size based on window
@@ -144,6 +133,7 @@ func (m *ProcessModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.viewport.SetWidth(msg.Width - 4) // Reserve space for padding/borders
 		m.viewport.SetHeight(viewportHeight)
+		m.mu.Unlock()
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -151,13 +141,17 @@ func (m *ProcessModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case ProcessingDoneMsg:
+		m.mu.Lock()
 		m.finished = true
-		// Auto-close after 10 seconds
-		m.autoCloseTime = time.Now().Add(10 * time.Second)
+		// Auto-close after the shared delay (see startAutoClose)
+		m.autoCloseTime = time.Now().Add(autoCloseDelay)
+		m.mu.Unlock()
 		return m, m.startAutoClose()
 
 	case AutoCloseMsg:
+		m.mu.Lock()
 		m.quitting = true
+		m.mu.Unlock()
 		return m, tea.Quit
 	}
 

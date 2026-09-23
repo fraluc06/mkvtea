@@ -1,13 +1,19 @@
 package mkv
 
 import (
+	"errors"
 	"fmt"
-	"mkvtea/internal/config"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+
+	"mkvtea/internal/config"
 )
+
+// ErrSkipped is returned when a file has no matching tracks to process.
+var ErrSkipped = errors.New("skipped")
 
 // ValidateDependencies checks if required MKV tools are installed
 func ValidateDependencies() error {
@@ -41,7 +47,7 @@ Ensure they are in your PATH and try again`, strings.Join(missingTools, ", "))
 func execute(command string, args ...string) error {
 	cmd := exec.Command(command, args...)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s command failed: %v", command, err)
+		return fmt.Errorf("%s command failed: %w", command, err)
 	}
 	return nil
 }
@@ -66,7 +72,7 @@ func RunExtract(path string, cfg config.Config) error {
 	for _, lang := range languages {
 		subsDir := filepath.Join(filepath.Dir(path), "subs", lang)
 		if err := os.MkdirAll(subsDir, os.ModePerm); err != nil {
-			return fmt.Errorf("failed to create subtitle directory: %v", err)
+			return fmt.Errorf("failed to create subtitle directory: %w", err)
 		}
 
 		for i, t := range info.Tracks {
@@ -89,7 +95,7 @@ func RunExtract(path string, cfg config.Config) error {
 				outName := fmt.Sprintf("%s_%s%s%s", epNum, lang, suffix, ext)
 				outputPath := filepath.Join(subsDir, outName)
 				if err := execute("mkvextract", path, "tracks", fmt.Sprintf("%d:%s", t.ID, outputPath)); err != nil {
-					return fmt.Errorf("subtitle extraction failed: %v", err)
+					return fmt.Errorf("subtitle extraction failed: %w", err)
 				}
 			}
 
@@ -104,14 +110,14 @@ func RunExtract(path string, cfg config.Config) error {
 				outName := fmt.Sprintf("%s_%s%s%s", epNum, lang, suffix, ext)
 				outputPath := filepath.Join(subsDir, outName)
 				if err := execute("mkvextract", path, "tracks", fmt.Sprintf("%d:%s", t.ID, outputPath)); err != nil {
-					return fmt.Errorf("audio extraction failed: %v", err)
+					return fmt.Errorf("audio extraction failed: %w", err)
 				}
 			}
 		}
 	}
 
 	if !overallFound {
-		return fmt.Errorf("skipped")
+		return ErrSkipped
 	}
 	return nil
 }
@@ -165,7 +171,7 @@ func RunMerge(path string, cfg config.Config) error {
 
 	// Skip if nothing found
 	if !hasSub && !hasAudio {
-		return fmt.Errorf("skipped")
+		return ErrSkipped
 	}
 
 	return runMkvMergeStandard(path, subFile, audioFile, subsSource, cfg)
@@ -174,7 +180,7 @@ func RunMerge(path string, cfg config.Config) error {
 func runMkvMergeStandard(path, subFile, audioFile, subsSource string, cfg config.Config) error {
 	info, err := GetInfo(path)
 	if err != nil {
-		return fmt.Errorf("failed to read MKV metadata: %v", err)
+		return fmt.Errorf("failed to read MKV metadata: %w", err)
 	}
 
 	outRoot := cfg.OutDir
@@ -183,11 +189,14 @@ func runMkvMergeStandard(path, subFile, audioFile, subsSource string, cfg config
 	}
 
 	// Maintain directory structure mirroring
-	relPath, _ := filepath.Rel(cfg.Dir, path)
+	relPath, err := filepath.Rel(cfg.Dir, path)
+	if err != nil {
+		return fmt.Errorf("failed to resolve relative path for %q: %w", path, err)
+	}
 	finalOutDir := filepath.Join(outRoot, filepath.Dir(relPath))
 
 	if err := os.MkdirAll(finalOutDir, os.ModePerm); err != nil {
-		return fmt.Errorf("failed to create output directory: %v", err)
+		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	// Ensure output filename ends in .mkv
@@ -202,7 +211,7 @@ func runMkvMergeStandard(path, subFile, audioFile, subsSource string, cfg config
 		var audioIDs []string
 		for _, t := range info.Tracks {
 			if t.Type == "audio" && t.Props.Lang == cfg.KeepOnlyAudio {
-				audioIDs = append(audioIDs, fmt.Sprintf("%d", t.ID))
+				audioIDs = append(audioIDs, strconv.Itoa(t.ID))
 			}
 		}
 		if len(audioIDs) > 0 {
@@ -225,7 +234,7 @@ func runMkvMergeStandard(path, subFile, audioFile, subsSource string, cfg config
 	// Attach fonts if found
 	fonts, err := filepath.Glob(filepath.Join(subsSource, "*.[ot]t[f]"))
 	if err != nil {
-		return fmt.Errorf("failed to search for fonts: %v", err)
+		return fmt.Errorf("failed to search for fonts: %w", err)
 	}
 	for _, f := range fonts {
 		args = append(args, "--attach-file", f)

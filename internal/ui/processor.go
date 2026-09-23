@@ -3,12 +3,13 @@ package ui
 import (
 	"bufio"
 	"fmt"
-	"mkvtea/internal/checkpoint"
-	"mkvtea/internal/config"
 	"os"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"mkvtea/internal/checkpoint"
+	"mkvtea/internal/config"
 )
 
 // RunProcessTUI starts the TUI processing
@@ -88,7 +89,10 @@ func RunProcessTUI(cfg config.Config, files []string) error {
 	}
 
 	// Get final stats
-	pm := finalModel.(*ProcessModel)
+	pm, ok := finalModel.(*ProcessModel)
+	if !ok {
+		return fmt.Errorf("unexpected model type %T", finalModel)
+	}
 
 	// Show final summary
 	fmt.Println()

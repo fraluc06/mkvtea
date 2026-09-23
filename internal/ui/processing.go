@@ -1,17 +1,24 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
-	"mkvtea/internal/mkv"
 	"path/filepath"
+	"slices"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"mkvtea/internal/mkv"
 )
 
-// startAutoClose returns a command that closes the TUI after 5 seconds
+// autoCloseDelay is how long the TUI stays open after processing completes.
+// Shared by the countdown display and the close timer so they cannot drift apart.
+const autoCloseDelay = 10 * time.Second
+
+// startAutoClose returns a command that closes the TUI after autoCloseDelay
 func (m *ProcessModel) startAutoClose() tea.Cmd {
-	return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
+	return tea.Tick(autoCloseDelay, func(time.Time) tea.Msg {
 		return AutoCloseMsg{}
 	})
 }
@@ -59,7 +66,7 @@ func (m *ProcessModel) processFile(file string) {
 	var logLine string
 
 	if err != nil {
-		if err.Error() == "skipped" {
+		if errors.Is(err, mkv.ErrSkipped) {
 			logLine = fmt.Sprintf("⏭️  SKIPPED: %s", filename)
 			m.skippedCount++
 			if m.cfg.CheckpointInterval > 0 && m.checkpointMgr != nil {
@@ -93,7 +100,7 @@ func (m *ProcessModel) processFile(file string) {
 				lang = m.cfg.Languages[0]
 			}
 			subsDir := filepath.Join(filepath.Dir(file), "subs", lang)
-			if !contains(m.extractedPaths, subsDir) {
+			if !slices.Contains(m.extractedPaths, subsDir) {
 				m.extractedPaths = append(m.extractedPaths, subsDir)
 			}
 		case "merge":

@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+// logPrefixes are the status prefixes used by log lines, in match order.
+// Note: prefixes contain multi-byte emoji, so byte-based slicing must not be
+// used to detect or strip them.
+var logPrefixes = []string{"✅ SUCCESS: ", "⏭️  SKIPPED: ", "❌ FAILED: "}
+
 // renderLogs renders the log entries, truncating filenames to fit the viewport
 func (m *ProcessModel) renderLogs() string {
 	availableWidth := m.viewport.Width()
@@ -12,42 +17,34 @@ func (m *ProcessModel) renderLogs() string {
 		availableWidth = 80 // fallback
 	}
 
-	var truncatedLogs []string
+	truncatedLogs := make([]string, 0, len(m.logs))
 	for _, logLine := range m.logs {
 		// Log format examples:
 		// ✅ SUCCESS: filename.mkv
 		// ⏭️  SKIPPED: filename.mkv
 		// ❌ FAILED: filename.mkv - error message
+		line := logLine
+		for _, prefix := range logPrefixes {
+			content, found := strings.CutPrefix(logLine, prefix)
+			if !found {
+				continue
+			}
 
-		// Extract prefix and content
-		var prefix, content string
-		if len(logLine) > 11 && logLine[:11] == "✅ SUCCESS:" {
-			prefix = "✅ SUCCESS: "
-			content = logLine[11:]
-		} else if len(logLine) > 12 && logLine[:12] == "⏭️  SKIPPED:" {
-			prefix = "⏭️  SKIPPED: "
-			content = logLine[12:]
-		} else if len(logLine) > 10 && logLine[:10] == "❌ FAILED:" {
-			prefix = "❌ FAILED: "
-			content = logLine[10:]
-		} else {
-			truncatedLogs = append(truncatedLogs, logLine)
-			continue
+			// Calculate max length for content (reserve space for prefix and buffer)
+			maxContentLen := availableWidth - len([]rune(prefix)) - 2
+			if maxContentLen < 10 {
+				maxContentLen = 10
+			}
+
+			// Truncate on rune boundaries to avoid splitting multi-byte characters
+			if runes := []rune(content); len(runes) > maxContentLen {
+				content = string(runes[:maxContentLen-3]) + "..."
+			}
+
+			line = prefix + content
+			break
 		}
-
-		// Calculate max length for content (reserve space for prefix and buffer)
-		maxContentLen := availableWidth - len(prefix) - 2
-
-		if maxContentLen < 10 {
-			maxContentLen = 10
-		}
-
-		// Truncate if needed
-		if len(content) > maxContentLen {
-			content = content[:maxContentLen-3] + "..."
-		}
-
-		truncatedLogs = append(truncatedLogs, prefix+content)
+		truncatedLogs = append(truncatedLogs, line)
 	}
 
 	return strings.Join(truncatedLogs, "\n")
@@ -64,17 +61,10 @@ func (m *ProcessModel) renderProgressBar(maxWidth int) string {
 	}
 
 	percent := float64(m.processedIdx) / float64(m.totalFiles)
-	filled := int(percent * float64(barWidth))
+	filled := min(int(percent*float64(barWidth)), barWidth)
 
 	// Progress bar with block characters: ████░░░░░░
-	bar := ""
-	for i := 0; i < barWidth; i++ {
-		if i < filled {
-			bar += "█"
-		} else {
-			bar += "░"
-		}
-	}
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
 
 	percentStr := fmt.Sprintf(" %3.0f%% [%2d/%2d]", percent*100, m.processedIdx, m.totalFiles)
 
