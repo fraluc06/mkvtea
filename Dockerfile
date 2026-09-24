@@ -22,9 +22,11 @@ FROM alpine:3.24 AS runner
 LABEL org.opencontainers.image.title="mkvtea" \
       org.opencontainers.image.source="https://github.com/fraluc06/mkvtea"
 
-# ~= pins the 99.x series but tolerates Alpine repo rebuilds (r0 → r1 → ...),
-# which a strict =99.0-r0 pin would break on the first rebuild.
-RUN apk add --no-cache 'mkvtoolnix~=99.0'
+# No pin: let apk resolve the newest build available on the pinned Alpine
+# branch (3.24 → mkvtoolnix 99.x). A strict =99.0-r0-style pin broke v1.2.0
+# the first time Alpine rebuilt the package (r0→r1). The base image version
+# is what freezes the toolchain for a reproducible release.
+RUN apk add --no-cache mkvtoolnix
 
 # A dedicated non-root user owns /data, where the media library gets mounted.
 RUN addgroup -S mkvtea && adduser -S -G mkvtea -h /data mkvtea && \
