@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"mkvtea/internal/encode"
 	"mkvtea/internal/mkv"
 )
 
@@ -53,9 +54,12 @@ func (m *ProcessModel) processFile(file string) {
 	defer func() { <-m.sem }() // Release token
 
 	var err error
-	if m.cfg.Mode == "extract" {
+	switch m.cfg.Mode {
+	case "extract":
 		err = mkv.RunExtract(file, m.cfg)
-	} else {
+	case "encode":
+		err = encode.RunEncode(file, m.cfg)
+	default:
 		err = mkv.RunMerge(file, m.cfg)
 	}
 
@@ -69,8 +73,12 @@ func (m *ProcessModel) processFile(file string) {
 		if errors.Is(err, mkv.ErrSkipped) {
 			logLine = fmt.Sprintf("⏭️  SKIPPED: %s", filename)
 			m.skippedCount++
+			reason := "no assets found"
+			if m.cfg.Mode == "encode" {
+				reason = "output already exists"
+			}
 			if m.cfg.CheckpointInterval > 0 && m.checkpointMgr != nil {
-				if addErr := m.checkpointMgr.AddSkipped(file, "no assets found"); addErr != nil {
+				if addErr := m.checkpointMgr.AddSkipped(file, reason); addErr != nil {
 					m.logCheckpointWarningLocked("failed to record skipped file %s: %v", filename, addErr)
 				}
 			}
@@ -113,6 +121,18 @@ func (m *ProcessModel) processFile(file string) {
 				outRoot = filepath.Join(filepath.Dir(m.cfg.Dir), filepath.Base(m.cfg.Dir)+"_"+lang)
 			}
 			m.outputDir = outRoot
+		case "encode":
+			subdir := m.cfg.OutSubdir
+			if subdir == "" {
+				subdir = encode.DefaultOutSubdir
+			}
+			outRoot := m.cfg.OutDir
+			if outRoot == "" {
+				outRoot = filepath.Join(filepath.Dir(file), subdir)
+			}
+			if !slices.Contains(m.extractedPaths, outRoot) {
+				m.extractedPaths = append(m.extractedPaths, outRoot)
+			}
 		}
 	}
 

@@ -34,8 +34,8 @@ go test ./...          # add -race for the concurrency-sensitive TUI code
 ```
 main.go                  # Entry point, only calls cmd.Execute()
 cmd/
-├── root.go              # Cobra root command, flags, extract/merge factory, processFiles
-├── scanner.go           # ScanFiles: finds .mkv/.mp4 (case-insensitive), recursive or not
+├── root.go              # Cobra root command, flags, extract/merge/encode factory, processFiles
+├── scanner.go           # ScanFiles: mode-aware video discovery (encode adds containers, skips av1/ dirs)
 └── scanner_test.go
 internal/
 ├── config/
@@ -46,9 +46,13 @@ internal/
 │   ├── metadata.go      # GetInfo: parses mkvmerge -J JSON (Track, Attachment, Info)
 │   ├── parser.go        # GetEpisodeNumber: episode regex, compiled once at package level
 │   └── *_test.go
+├── encode/
+│   ├── encode.go        # RunEncode: ffmpeg→SvtAv1EncApp y4m pipe, mkvmerge remux, output paths
+│   ├── params.go        # ParseParams/ResolveParams: flag > file > .mkvtea-av1-params > defaults
+│   └── *_test.go
 ├── ui/
 │   ├── model.go         # ProcessModel state + Init/Update
-│   ├── processing.go    # Worker goroutines, semaphore, checkpoint recording
+│   ├── processing.go    # Worker goroutines, mode dispatch, checkpoint recording
 │   ├── rendering.go     # Log truncation (rune-safe) + progress bar
 │   ├── view.go          # View layout (holds m.mu while rendering)
 │   ├── processor.go     # RunProcessTUI entry point, resume prompt, final summary
@@ -81,12 +85,20 @@ internal/
 ## Important Patterns
 
 ### External Tool Invocation
-All MKV work goes through `mkvmerge`/`mkvextract`/`mkvpropedit` via `os/exec`; validate availability first:
+All MKV work goes through `mkvmerge`/`mkvextract`/`mkvpropedit` via `os/exec`; encode mode
+additionally drives `ffmpeg | SvtAv1EncApp` (y4m pipe) then remuxes with `mkvmerge`.
+Validate availability first (mode-aware — `processFiles` picks the right validator):
 ```go
 if err := mkv.ValidateDependencies(); err != nil {
     return err // multi-line install instructions, printed once by Execute
 }
+// encode mode:
+if err := encode.ValidateDependencies(); err != nil { // SvtAv1EncApp, ffmpeg, mkvmerge
+    return err
+}
 ```
+When piping two commands, start the reader first, wire `cmdA.StdoutPipe()` into
+`cmdB.Stdin`, then `Wait` the producer before the consumer (EOF closes the pipe).
 
 ### State Management
 - `ProcessModel` is the single source of truth for TUI state
@@ -115,6 +127,7 @@ if err := mkv.ValidateDependencies(); err != nil {
 ## Performance Considerations
 
 - Worker count auto-detected: 50% of CPUs, clamped to [2, 8]; overridable via config
+- Encode mode defaults to 1 worker — SvtAv1EncApp saturates cores on a single video; parallel encodes thrash
 - Process-level parallelism only — MKVToolNix does the heavy I/O, Go coordinates
 - Preallocate slices when size is known (`make([]string, 0, len(files))`)
 - Checkpoint saves are throttled by `--checkpoint-interval` (default every 10 files), not per file

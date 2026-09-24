@@ -4,7 +4,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"mkvtea/internal/config"
 )
+
+func scanCfg(dir string, recursive bool, mode string) config.Config {
+	return config.Config{Dir: dir, Recursive: recursive, Mode: mode}
+}
 
 // isUnderDirectory checks if a file is under a given directory
 func isUnderDirectory(file, dir string) bool {
@@ -44,7 +50,7 @@ func TestScanFilesNonRecursive(t *testing.T) {
 	}
 
 	// Test non-recursive scan
-	found := ScanFiles(tmpDir, false)
+	found := ScanFiles(scanCfg(tmpDir, false, "extract"))
 
 	// Should find exactly 3 .mkv files (case-insensitive)
 	if len(found) != 3 {
@@ -92,7 +98,7 @@ func TestScanFilesRecursive(t *testing.T) {
 	}
 
 	// Test recursive scan
-	found := ScanFiles(tmpDir, true)
+	found := ScanFiles(scanCfg(tmpDir, true, "extract"))
 
 	// Should find exactly 5 .mkv files
 	if len(found) != 5 {
@@ -104,13 +110,13 @@ func TestScanFilesEmptyDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Test empty directory
-	found := ScanFiles(tmpDir, false)
+	found := ScanFiles(scanCfg(tmpDir, false, "extract"))
 	if len(found) != 0 {
 		t.Errorf("Expected 0 files in empty directory, found %d", len(found))
 	}
 
 	// Test empty directory with recursive
-	found = ScanFiles(tmpDir, true)
+	found = ScanFiles(scanCfg(tmpDir, true, "extract"))
 	if len(found) != 0 {
 		t.Errorf("Expected 0 files in empty directory (recursive), found %d", len(found))
 	}
@@ -118,7 +124,7 @@ func TestScanFilesEmptyDirectory(t *testing.T) {
 
 func TestScanFilesNonExistentDirectory(t *testing.T) {
 	// Test non-existent directory
-	found := ScanFiles("/nonexistent/directory", false)
+	found := ScanFiles(scanCfg("/nonexistent/directory", false, "extract"))
 	if len(found) != 0 {
 		t.Errorf("Expected 0 files for non-existent directory, found %d", len(found))
 	}
@@ -144,8 +150,63 @@ func TestScanFilesCaseSensitivity(t *testing.T) {
 	}
 
 	// Should find all 4 files regardless of extension case
-	found := ScanFiles(tmpDir, false)
+	found := ScanFiles(scanCfg(tmpDir, false, "extract"))
 	if len(found) != 4 {
 		t.Errorf("Expected 4 MKV files (case-insensitive extensions), found %d", len(found))
+	}
+}
+
+// TestScanFilesEncodeModeExtraExtensions verifies encode mode accepts the extra
+// containers (mov/avi/m2ts/ts/webm) while extract mode still rejects them.
+func TestScanFilesEncodeModeExtraExtensions(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	files := []string{"a.mkv", "b.mp4", "c.mov", "d.avi", "e.m2ts", "f.ts", "g.webm", "h.txt"}
+	for _, f := range files {
+		if err := os.WriteFile(filepath.Join(tmpDir, f), []byte("x"), 0644); err != nil {
+			t.Fatalf("failed to create %s: %v", f, err)
+		}
+	}
+
+	encodeFound := ScanFiles(scanCfg(tmpDir, false, "encode"))
+	if len(encodeFound) != 7 {
+		t.Errorf("encode mode: expected 7 video files, found %d", len(encodeFound))
+	}
+
+	extractFound := ScanFiles(scanCfg(tmpDir, false, "extract"))
+	if len(extractFound) != 2 {
+		t.Errorf("extract mode: expected 2 files (mkv/mp4 only), found %d", len(extractFound))
+	}
+}
+
+// TestScanFilesEncodeSkipsOutSubdir verifies recursive encode walks skip the
+// output subdir so previously encoded files are never re-encoded.
+func TestScanFilesEncodeSkipsOutSubdir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	seriesDir := filepath.Join(tmpDir, "season1")
+	outDir := filepath.Join(seriesDir, "av1")
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		t.Fatalf("failed to create dirs: %v", err)
+	}
+	for _, f := range []string{
+		filepath.Join(seriesDir, "ep01.mkv"), // source
+		filepath.Join(outDir, "ep01.mkv"),    // prior output — must be skipped
+	} {
+		if err := os.WriteFile(f, []byte("x"), 0644); err != nil {
+			t.Fatalf("failed to create %s: %v", f, err)
+		}
+	}
+
+	// encode mode: only the source, the av1/ copy is skipped
+	encodeFound := ScanFiles(scanCfg(tmpDir, true, "encode"))
+	if len(encodeFound) != 1 {
+		t.Errorf("encode: expected 1 file (av1/ skipped), found %d: %v", len(encodeFound), encodeFound)
+	}
+
+	// extract mode: both are seen (no skip in non-encode modes)
+	extractFound := ScanFiles(scanCfg(tmpDir, true, "extract"))
+	if len(extractFound) != 2 {
+		t.Errorf("extract: expected 2 files (no skip), found %d", len(extractFound))
 	}
 }
