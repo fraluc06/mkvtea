@@ -84,6 +84,18 @@ internal/
 
 ## Important Patterns
 
+### Dependency direction (law)
+Import flow is strictly one-way: `cmd → ui → {mkv, encode, checkpoint}`. The TUI is a
+leaf package; the engines must never know it exists:
+- Only `cmd/root.go` may import `internal/ui`; `internal/ui` never imports `cmd`
+- `charm.land/*` (bubbletea, bubbles, lipgloss) may appear ONLY inside `internal/ui`
+- `internal/mkv`, `internal/encode`, `internal/checkpoint`, `internal/config` take plain
+  args and return results — testable without a terminal
+- Self-check: `grep -rlE 'charm.land' --include='*.go' cmd internal` lists only `internal/ui/` files
+
+This convention is shared with burnmail (same rules, package names aside); keep both
+AGENTS.md files aligned when either layout changes.
+
 ### External Tool Invocation
 All MKV work goes through `mkvmerge`/`mkvextract`/`mkvpropedit` via `os/exec`; encode mode
 additionally drives `ffmpeg | SvtAv1EncApp` (y4m pipe) then remuxes with `mkvmerge`.
@@ -146,3 +158,4 @@ When piping two commands, start the reader first, wire `cmdA.StdoutPipe()` into
 - CI pipeline: `.github/workflows/CI.yml`
 - Release pipeline: `.github/workflows/release.yml`
 - Docker setup and volume notes: `docker-compose.yml` (header comments)
+- Sister project sharing the layout conventions: burnmail (its AGENTS.md mirrors the dependency-direction law above)
