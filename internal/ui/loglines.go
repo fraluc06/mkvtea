@@ -28,11 +28,16 @@ func (m *ProcessModel) progressCallback(file string) encode.ProgressFunc {
 }
 
 // encodeStatusLine builds the live 🔄 ENCODING line. The status leads and the
-// filename trails so renderLogs truncation keeps the interesting part.
+// filename trails so renderLogs truncation keeps the interesting part. A
+// metadata-estimated total is shown as an approximate percent.
 func encodeStatusLine(filename string, p encode.Progress) string {
 	if p.Total > 0 {
+		approx := ""
+		if p.Estimated {
+			approx = "≈"
+		}
 		percent := 100 * float64(p.Frames) / float64(p.Total)
-		return fmt.Sprintf("🔄 ENCODING: %.1f%% @ %.0f fps — %s", percent, p.FPS, filename)
+		return fmt.Sprintf("🔄 ENCODING: %s%.1f%% @ %.0f fps — %s", approx, percent, p.FPS, filename)
 	}
 	return fmt.Sprintf("🔄 ENCODING: %d frames @ %.0f fps — %s", p.Frames, p.FPS, filename)
 }

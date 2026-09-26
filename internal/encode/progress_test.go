@@ -123,6 +123,62 @@ func TestProgressWriterSuppressesRepeatsAndStale(t *testing.T) {
 	}
 }
 
+func TestProgressWriterInjectsEstimatedTotal(t *testing.T) {
+	tests := []struct {
+		name           string
+		estimatedTotal int
+		segment        string
+		want           Progress
+	}{
+		{
+			name:           "no total yet: metadata estimate fills in",
+			estimatedTotal: 33424,
+			segment:        "Encoding:  100 Frames @ 22.50 fps | x",
+			want:           Progress{Frames: 100, Total: 33424, Estimated: true, FPS: 22.5},
+		},
+		{
+			name:           "encoder total wins over estimate",
+			estimatedTotal: 999,
+			segment:        "Encoding:  240/241 Frames @ 1475.51 fps | x",
+			want:           Progress{Frames: 240, Total: 241, FPS: 1475.51},
+		},
+		{
+			name:           "estimate already outgrown is not used",
+			estimatedTotal: 50,
+			segment:        "Encoding:  60 Frames @ 22.50 fps | x",
+			want:           Progress{Frames: 60, Total: 0, FPS: 22.5},
+		},
+		{
+			name:           "no estimate leaves total at zero",
+			estimatedTotal: 0,
+			segment:        "Encoding:  100 Frames @ 22.50 fps | x",
+			want:           Progress{Frames: 100, Total: 0, FPS: 22.5},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tail := &tailBuffer{max: 512}
+			var got []Progress
+			w := &progressWriter{
+				tail:           tail,
+				onProgress:     func(p Progress) { got = append(got, p) },
+				estimatedTotal: tt.estimatedTotal,
+				minInterval:    0,
+			}
+			if _, err := w.Write([]byte(tt.segment + "\n")); err != nil {
+				t.Fatalf("write failed: %v", err)
+			}
+			if len(got) != 1 {
+				t.Fatalf("got %d updates, want 1", len(got))
+			}
+			if got[0] != tt.want {
+				t.Errorf("update = %+v, want %+v", got[0], tt.want)
+			}
+		})
+	}
+}
+
 func TestProgressWriterNilCallbackKeepsTail(t *testing.T) {
 	tail := &tailBuffer{max: 64}
 	w := &progressWriter{tail: tail, minInterval: 0}

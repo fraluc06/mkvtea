@@ -249,3 +249,39 @@ func TestMultipleSubtitleTracks(t *testing.T) {
 		t.Errorf("Expected track 0 to have forced=false")
 	}
 }
+
+func TestInfoDurationFields(t *testing.T) {
+	// Values from `mkvmerge -J` on a real 23.976 fps episode (ns units).
+	jsonData := `{
+		"container": {
+			"properties": {
+				"duration": 1394060000000
+			}
+		},
+		"tracks": [
+			{
+				"id": 0,
+				"type": "video",
+				"codec": "h264",
+				"properties": {
+					"language": "und",
+					"default_duration": 41708333
+				}
+			}
+		],
+		"attachments": [],
+		"chapters": []
+	}`
+
+	var info Info
+	if err := json.Unmarshal([]byte(jsonData), &info); err != nil {
+		t.Fatalf("Failed to unmarshal info: %v", err)
+	}
+
+	if got := info.Container.Properties.Duration; got != 1394060000000 {
+		t.Errorf("Container duration = %v, want 1394060000000", got)
+	}
+	if got := info.Tracks[0].Props.DefaultDuration; got != 41708333 {
+		t.Errorf("Video default_duration = %v, want 41708333", got)
+	}
+}

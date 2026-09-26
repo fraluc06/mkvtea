@@ -10,14 +10,21 @@ import (
 
 // Progress is one SvtAv1EncApp status update for a running encode.
 type Progress struct {
-	Frames int
-	Total  int // 0 while the encoder has not established the frame count yet
-	FPS    float64
+	Frames    int
+	Total     int  // 0 while neither the encoder nor metadata supplies it
+	Estimated bool // Total came from source metadata, not the encoder
+	FPS       float64
 }
 
 // ProgressFunc receives encode progress updates. The engine reports plain
 // values so internal/encode stays unaware of the TUI (dependency law).
 type ProgressFunc func(Progress)
+
+// encoderProgress bundles the live-status wiring for one encode pass.
+type encoderProgress struct {
+	onProgress     ProgressFunc
+	estimatedTotal int // frames estimated from source metadata; 0 = no estimate
+}
 
 // progressEmitInterval is the minimum gap between progress callbacks; it
 // keeps a fast encoder from flooding the TUI with redraws.
@@ -63,11 +70,14 @@ func parseProgress(segment string) (Progress, bool) {
 
 // progressWriter tees SvtAv1EncApp stderr: every byte still lands in the tail
 // buffer for failure diagnostics, while \r/\n-delimited segments are parsed
-// into progress updates for onProgress (nil disables reporting).
+// into progress updates for onProgress (nil disables reporting). Until the
+// encoder learns the real frame total at input EOF, estimatedTotal (0 = no
+// estimate) fills in so the TUI can show an approximate percent from frame one.
 type progressWriter struct {
-	tail        *tailBuffer
-	onProgress  ProgressFunc
-	minInterval time.Duration
+	tail           *tailBuffer
+	onProgress     ProgressFunc
+	estimatedTotal int
+	minInterval    time.Duration
 
 	pending   []byte // trailing bytes of the unterminated segment
 	lastFrame int    // last reported frame count, suppresses repeats
@@ -108,6 +118,13 @@ func (w *progressWriter) emit(segment string) {
 	now := time.Now()
 	if !w.lastEmit.IsZero() && now.Sub(w.lastEmit) < w.minInterval {
 		return
+	}
+	// The encoder only reports a total once stdin hits EOF, which on slow
+	// presets happens near the very end; until then lean on the metadata
+	// estimate, but never one that the encoder has already outgrown.
+	if progress.Total == 0 && w.estimatedTotal > progress.Frames {
+		progress.Total = w.estimatedTotal
+		progress.Estimated = true
 	}
 	w.lastEmit = now
 	w.lastFrame = progress.Frames

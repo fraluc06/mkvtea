@@ -114,10 +114,17 @@ if err := encode.ValidateDependencies(); err != nil { // SvtAv1EncApp, ffmpeg, m
 When piping two commands, start the reader first, wire `cmdA.StdoutPipe()` into
 `cmdB.Stdin`, then `Wait` the producer before the consumer (EOF closes the pipe).
 SvtAv1EncApp streams live progress on stderr as `\r`-delimited segments with ANSI
-color codes and, while piping stdin, without a frame total yet (`Encoding: 2 Frames
+color codes and, while piping stdin, without a frame total (`Encoding: 2 Frames
 @ 18 fps` → `Encoding: 240/240 Frames @ 1475 fps`): `encode/progress.go` tees every
 byte to the `tailBuffer` diagnostics and forwards parsed updates through a plain
-`ProgressFunc` callback — the engine stays TUI-agnostic (dependency law).
+`ProgressFunc` callback — the engine stays TUI-agnostic (dependency law). Until the
+encoder learns the real total at input EOF (late on slow presets), `estimatedFrames`
+derives one from `mkvmerge -J` container duration ÷ video `default_duration`; such
+totals carry `Progress.Estimated` and the TUI renders them with `≈`. Because the
+encoder only learns the total at input EOF (late on slow presets), `estimatedFrames`
+derives one from `mkvmerge -J` container duration / video `default_duration` so the
+TUI shows a `≈`-marked percent from frame one; the encoder's real total replaces it at
+EOF, and cover-art video tracks without `default_duration` are skipped.
 
 ### State Management
 - `ProcessModel` is the single source of truth for TUI state

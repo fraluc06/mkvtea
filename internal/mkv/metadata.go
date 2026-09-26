@@ -14,9 +14,10 @@ type Track struct {
 	Type  string `json:"type"`
 	Codec string `json:"codec"`
 	Props struct {
-		Lang      string `json:"language"`
-		TrackName string `json:"track_name"`
-		Forced    bool   `json:"forced_track"`
+		Lang            string  `json:"language"`
+		TrackName       string  `json:"track_name"`
+		Forced          bool    `json:"forced_track"`
+		DefaultDuration float64 `json:"default_duration"` // ns per frame; 0 when unknown
 	} `json:"properties"`
 }
 
@@ -32,6 +33,11 @@ type Info struct {
 	Tracks      []Track      `json:"tracks"`
 	Attachments []Attachment `json:"attachments"`
 	Chapters    []any        `json:"chapters"`
+	Container   struct {
+		Properties struct {
+			Duration float64 `json:"duration"` // ns; 0 when unknown
+		} `json:"properties"`
+	} `json:"container"`
 }
 
 // GetInfo analyzes MKV file metadata using mkvmerge
