@@ -143,7 +143,7 @@ When piping two commands, start the reader first, wire `cmdA.StdoutPipe()` into
 - Encode mode defaults to 1 worker — SvtAv1EncApp saturates cores on a single video; parallel encodes thrash
 - Process-level parallelism only — MKVToolNix does the heavy I/O, Go coordinates
 - Preallocate slices when size is known (`make([]string, 0, len(files))`)
-- Checkpoint saves are throttled by `--checkpoint-interval` (default every 10 files), not per file
+- Checkpoint saves are throttled by `--checkpoint-interval` (default every 10 files), not per file — at completion `flushCheckpointLocked` persists the unsaved tail, and a run without failures clears the checkpoint instead of leaving an exhausted one behind
 
 ## Deployment
 

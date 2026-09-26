@@ -8,6 +8,32 @@ import (
 	"mkvtea/internal/config"
 )
 
+func TestExists(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Config{Dir: dir, Mode: "encode", CheckpointInterval: 10}
+
+	if Exists(cfg) {
+		t.Fatal("Exists = true before any checkpoint was created")
+	}
+
+	mgr, err := NewManager(cfg)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	if err := mgr.Create(cfg, 1); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !Exists(cfg) {
+		t.Fatal("Exists = false after Create/Save, want true")
+	}
+	if err := mgr.Clear(); err != nil {
+		t.Fatalf("Clear: %v", err)
+	}
+	if Exists(cfg) {
+		t.Fatal("Exists = true after Clear, want false")
+	}
+}
+
 func TestCheckpointDir(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "ep01.mkv")

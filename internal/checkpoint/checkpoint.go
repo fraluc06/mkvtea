@@ -62,6 +62,13 @@ type Manager struct {
 // checkpointFileName is the per-directory checkpoint file name.
 const checkpointFileName = ".mkvtea_checkpoint.json"
 
+// Exists reports whether a checkpoint file is present for cfg's directory,
+// so callers (e.g. the final summary) can speak of it only when it survives.
+func Exists(cfg config.Config) bool {
+	_, err := os.Stat(filepath.Join(checkpointDir(cfg), checkpointFileName))
+	return err == nil
+}
+
 // checkpointDir resolves the directory that holds the checkpoint file. In
 // single-file mode cfg.Dir is the scanned file itself (the scanner accepts
 // either); the checkpoint then lives next to it, like the av1/subs outputs.

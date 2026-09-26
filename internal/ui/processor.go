@@ -102,8 +102,9 @@ func RunProcessTUI(cfg config.Config, files []string) error {
 	fmt.Printf("   ⏭️  Skipped: %d\n", pm.skippedCount)
 	fmt.Printf("   ❌ Errors:  %d\n", pm.errorCount)
 
-	// Show checkpoint info
-	if cfg.CheckpointInterval > 0 {
+	// Show checkpoint info (a clean run's checkpoint is flushed away by the
+	// final flush — see flushCheckpointLocked)
+	if cfg.CheckpointInterval > 0 && checkpoint.Exists(cfg) {
 		fmt.Printf("   💾 Checkpoint: .mkvtea_checkpoint.json (in %s)\n", cfg.Dir)
 	}
 
