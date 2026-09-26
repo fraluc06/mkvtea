@@ -53,8 +53,10 @@ Ensure they are in your PATH and try again`, strings.Join(missingTools, ", "))
 
 // RunEncode encodes one video file to AV1 with SvtAv1EncApp, then remuxes all
 // non-video streams (audio, subtitles, attachments, chapters) from the source.
+// onProgress (nil when unused) receives live status updates from the video
+// pass, throttled to one per progressEmitInterval.
 // Returns mkv.ErrSkipped when the output already exists (idempotent reruns).
-func RunEncode(path string, cfg config.Config) error {
+func RunEncode(path string, cfg config.Config, onProgress ProgressFunc) error {
 	info, err := mkv.GetInfo(path)
 	if err != nil {
 		return err
@@ -85,7 +87,7 @@ func RunEncode(path string, cfg config.Config) error {
 	}
 	defer func() { _ = os.Remove(tmpPath) }() // best-effort cleanup
 
-	if err := encodeVideo(path, tmpPath, params); err != nil {
+	if err := encodeVideo(path, tmpPath, params, onProgress); err != nil {
 		return err
 	}
 
@@ -116,8 +118,9 @@ func outputPath(path string, cfg config.Config) string {
 }
 
 // encodeVideo decodes the source to 10-bit y4m with ffmpeg and pipes it into
-// SvtAv1EncApp, replacing the zsh `<(...)` process substitution.
-func encodeVideo(srcPath, tmpPath string, params []string) error {
+// SvtAv1EncApp, replacing the zsh `<(...)` process substitution. onProgress
+// (may be nil) is fed the encoder's live stderr progress segments.
+func encodeVideo(srcPath, tmpPath string, params []string, onProgress ProgressFunc) error {
 	ffmpegCmd := exec.Command("ffmpeg",
 		"-hide_banner", "-loglevel", "error",
 		"-i", srcPath,
@@ -133,7 +136,11 @@ func encodeVideo(srcPath, tmpPath string, params []string) error {
 	ffmpegErr.max = stderrTail
 	encErr.max = stderrTail
 	ffmpegCmd.Stderr = &ffmpegErr
-	encCmd.Stderr = &encErr
+	encCmd.Stderr = &progressWriter{
+		tail:        &encErr,
+		onProgress:  onProgress,
+		minInterval: progressEmitInterval,
+	}
 
 	pipe, err := ffmpegCmd.StdoutPipe()
 	if err != nil {

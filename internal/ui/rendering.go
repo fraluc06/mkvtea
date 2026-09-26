@@ -8,7 +8,7 @@ import (
 // logPrefixes are the status prefixes used by log lines, in match order.
 // Note: prefixes contain multi-byte emoji, so byte-based slicing must not be
 // used to detect or strip them.
-var logPrefixes = []string{"✅ SUCCESS: ", "⏭️  SKIPPED: ", "❌ FAILED: "}
+var logPrefixes = []string{"✅ SUCCESS: ", "⏭️  SKIPPED: ", "❌ FAILED: ", "🔄 ENCODING: ", "🔄 STARTED: "}
 
 // renderLogs renders the log entries, truncating filenames to fit the viewport
 func (m *ProcessModel) renderLogs() string {
@@ -23,6 +23,8 @@ func (m *ProcessModel) renderLogs() string {
 		// ✅ SUCCESS: filename.mkv
 		// ⏭️  SKIPPED: filename.mkv
 		// ❌ FAILED: filename.mkv - error message
+		// 🔄 ENCODING: 42.1% @ 1234 fps — filename.mkv
+		// 🔄 STARTED: filename.mkv
 		line := logLine
 		for _, prefix := range logPrefixes {
 			content, found := strings.CutPrefix(logLine, prefix)

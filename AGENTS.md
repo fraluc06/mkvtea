@@ -48,11 +48,13 @@ internal/
 │   └── *_test.go
 ├── encode/
 │   ├── encode.go        # RunEncode: ffmpeg→SvtAv1EncApp y4m pipe, mkvmerge remux, output paths
+│   ├── progress.go      # Parse SvtAv1EncApp stderr progress (\r-delimited, ANSI-colored) → plain ProgressFunc
 │   ├── params.go        # ParseParams/ResolveParams: flag > file > .mkvtea-av1-params > defaults
 │   └── *_test.go
 ├── ui/
 │   ├── model.go         # ProcessModel state + Init/Update
 │   ├── processing.go    # Worker goroutines, mode dispatch, checkpoint recording
+│   ├── loglines.go      # One live log line per file: STARTED/ENCODING → final status, in place
 │   ├── rendering.go     # Log truncation (rune-safe) + progress bar
 │   ├── view.go          # View layout (holds m.mu while rendering)
 │   ├── processor.go     # RunProcessTUI entry point, resume prompt, final summary
@@ -111,12 +113,21 @@ if err := encode.ValidateDependencies(); err != nil { // SvtAv1EncApp, ffmpeg, m
 ```
 When piping two commands, start the reader first, wire `cmdA.StdoutPipe()` into
 `cmdB.Stdin`, then `Wait` the producer before the consumer (EOF closes the pipe).
+SvtAv1EncApp streams live progress on stderr as `\r`-delimited segments with ANSI
+color codes and, while piping stdin, without a frame total yet (`Encoding: 2 Frames
+@ 18 fps` → `Encoding: 240/240 Frames @ 1475 fps`): `encode/progress.go` tees every
+byte to the `tailBuffer` diagnostics and forwards parsed updates through a plain
+`ProgressFunc` callback — the engine stays TUI-agnostic (dependency law).
 
 ### State Management
 - `ProcessModel` is the single source of truth for TUI state
 - Worker goroutines mutate `logs`/counters/`viewport` only while holding `m.mu`
 - `View` and `Update` (WindowSizeMsg/quit paths) must also hold `m.mu` when touching shared state — the BubbleTea renderer runs on its own goroutine
 - Concurrency = buffered semaphore channel (`m.sem`) + `sync.WaitGroup`, worker count from `min(max(NumCPU/2, 2), 8)`
+- The Processing Log keeps ONE line per file: `🔄 STARTED` appears when a worker slot
+  is acquired, `🔄 ENCODING` rewrites it live, and the final `✅/⏭️/❌` replaces it in
+  place via the index in `m.activeLogs` — never append a second line per file. New log
+  prefixes must join `logPrefixes` in `ui/rendering.go` or truncation will miss them
 
 ## Testing Guidelines
 

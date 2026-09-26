@@ -32,6 +32,11 @@ type ProcessModel struct {
 	logs     []string
 	mu       sync.Mutex
 
+	// activeLogs maps an in-flight file path to its line index in logs, so
+	// the 🔄 STARTED/ENCODING line is replaced in place by the final status
+	// instead of growing a second line per file. Guarded by m.mu.
+	activeLogs map[string]int
+
 	// Window size
 	width  int
 	height int
@@ -80,6 +85,7 @@ func NewProcessModel(cfg config.Config, files []string) *ProcessModel {
 		spinner:       s,
 		viewport:      vp,
 		logs:          logs,
+		activeLogs:    make(map[string]int),
 		sem:           make(chan struct{}, cfg.MaxProcs),
 		processedIdx:  0,
 		finished:      false,

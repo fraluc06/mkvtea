@@ -53,12 +53,20 @@ func (m *ProcessModel) processFile(file string) {
 	m.sem <- struct{}{}        // Acquire token
 	defer func() { <-m.sem }() // Release token
 
+	filename := filepath.Base(file)
+
+	// Announce the file the moment it gets a worker slot; the line is
+	// rewritten in place as the file progresses and finishes.
+	m.mu.Lock()
+	m.activeLogs[file] = m.appendLogLocked("🔄 STARTED: " + filename)
+	m.mu.Unlock()
+
 	var err error
 	switch m.cfg.Mode {
 	case "extract":
 		err = mkv.RunExtract(file, m.cfg)
 	case "encode":
-		err = encode.RunEncode(file, m.cfg)
+		err = encode.RunEncode(file, m.cfg, m.progressCallback(file))
 	default:
 		err = mkv.RunMerge(file, m.cfg)
 	}
@@ -66,7 +74,6 @@ func (m *ProcessModel) processFile(file string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	filename := filepath.Base(file)
 	var logLine string
 
 	if err != nil {
@@ -136,7 +143,14 @@ func (m *ProcessModel) processFile(file string) {
 		}
 	}
 
-	m.logs = append(m.logs, logLine)
+	// Final status replaces this file's 🔄 STARTED/ENCODING line in place.
+	if idx, ok := m.activeLogs[file]; ok {
+		m.replaceLogLocked(idx, logLine)
+		delete(m.activeLogs, file)
+	} else {
+		// Defensive: the line should exist; never drop a result.
+		m.appendLogLocked(logLine)
+	}
 	m.processedIdx++
 
 	// Save checkpoint at intervals
@@ -151,7 +165,6 @@ func (m *ProcessModel) processFile(file string) {
 		}
 	}
 
-	// Update viewport - truncate will happen in renderLogs based on available width
-	m.viewport.SetContent(m.renderLogs())
-	m.viewport.GotoBottom()
+	// Refresh once more so checkpoint warnings appended above are visible.
+	m.refreshLogsLocked()
 }
