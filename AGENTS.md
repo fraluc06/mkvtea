@@ -24,7 +24,7 @@ go test ./...          # add -race for the concurrency-sensitive TUI code
 ## Tech Layers
 
 - **Framework**: Cobra (CLI commands/flags) + BubbleTea v2 (TUI)
-- **Language**: Go 1.25+ (go.mod toolchain; mise pins Go 1.26)
+- **Language**: Go 1.26+ (go.mod directive; mise pins Go 1.26, CI matrix runs 1.26)
 - **Styling**: Lipgloss v2 with the Catppuccin Mocha palette (`internal/ui/styles.go`)
 - **Database**: None — state lives in `.mkvtea_checkpoint.json` (atomic temp-file + rename) inside the scanned directory
 - **Testing**: stdlib `testing` with table-driven tests, no external assertion libs
