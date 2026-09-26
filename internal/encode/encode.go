@@ -53,8 +53,10 @@ Ensure they are in your PATH and try again`, strings.Join(missingTools, ", "))
 
 // RunEncode encodes one video file to AV1 with SvtAv1EncApp, then remuxes all
 // non-video streams (audio, subtitles, attachments, chapters) from the source.
+// onProgress (nil when unused) receives live status updates from the video
+// pass, throttled to one per progressEmitInterval.
 // Returns mkv.ErrSkipped when the output already exists (idempotent reruns).
-func RunEncode(path string, cfg config.Config) error {
+func RunEncode(path string, cfg config.Config, onProgress ProgressFunc) error {
 	info, err := mkv.GetInfo(path)
 	if err != nil {
 		return err
@@ -85,11 +87,41 @@ func RunEncode(path string, cfg config.Config) error {
 	}
 	defer func() { _ = os.Remove(tmpPath) }() // best-effort cleanup
 
-	if err := encodeVideo(path, tmpPath, params); err != nil {
+	// The encoder only knows the frame total at input EOF (late on slow
+	// presets); estimate one from metadata so the TUI can show a percent
+	// from the first frame.
+	progress := encoderProgress{onProgress: onProgress, estimatedTotal: estimatedFrames(info)}
+	if err := encodeVideo(path, tmpPath, params, progress); err != nil {
 		return err
 	}
 
 	return remux(path, tmpPath, outPath, info, cfg)
+}
+
+// estimatedFrames approximates the source video's frame count from container
+// metadata so progress can report a percent before the encoder learns the
+// real total at input EOF. Returns 0 when metadata cannot produce a sane
+// estimate (missing duration, no usable video track, out-of-range result).
+// Video tracks without a per-frame duration (cover art, attached pictures)
+// are skipped so the main track still yields an estimate.
+func estimatedFrames(info *mkv.Info) int {
+	duration := info.Container.Properties.Duration
+	if duration <= 0 {
+		return 0
+	}
+	for _, t := range info.Tracks {
+		if t.Type != "video" || t.Props.DefaultDuration <= 0 {
+			continue
+		}
+		frames := duration / t.Props.DefaultDuration
+		// NaN, negatives and absurd values fail this bound; 1e9 covers a
+		// ~13-day 24 fps video.
+		if frames <= 0 || frames > 1e9 {
+			continue
+		}
+		return int(frames)
+	}
+	return 0
 }
 
 // outputPath returns the destination: <folder>/<OutSubdir>/<name>.mkv, or
@@ -116,8 +148,9 @@ func outputPath(path string, cfg config.Config) string {
 }
 
 // encodeVideo decodes the source to 10-bit y4m with ffmpeg and pipes it into
-// SvtAv1EncApp, replacing the zsh `<(...)` process substitution.
-func encodeVideo(srcPath, tmpPath string, params []string) error {
+// SvtAv1EncApp, replacing the zsh `<(...)` process substitution. progress
+// carries the live status callback (may be nil) and the metadata frame estimate.
+func encodeVideo(srcPath, tmpPath string, params []string, progress encoderProgress) error {
 	ffmpegCmd := exec.Command("ffmpeg",
 		"-hide_banner", "-loglevel", "error",
 		"-i", srcPath,
@@ -133,7 +166,12 @@ func encodeVideo(srcPath, tmpPath string, params []string) error {
 	ffmpegErr.max = stderrTail
 	encErr.max = stderrTail
 	ffmpegCmd.Stderr = &ffmpegErr
-	encCmd.Stderr = &encErr
+	encCmd.Stderr = &progressWriter{
+		tail:           &encErr,
+		onProgress:     progress.onProgress,
+		estimatedTotal: progress.estimatedTotal,
+		minInterval:    progressEmitInterval,
+	}
 
 	pipe, err := ffmpegCmd.StdoutPipe()
 	if err != nil {
