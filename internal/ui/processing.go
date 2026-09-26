@@ -42,7 +42,33 @@ func (m *ProcessModel) startProcessing() tea.Cmd {
 
 		// Wait for all to complete
 		m.wg.Wait()
+
+		// Persist or discard the run's checkpoint before announcing done.
+		m.mu.Lock()
+		m.flushCheckpointLocked()
+		m.mu.Unlock()
+
 		return ProcessingDoneMsg{}
+	}
+}
+
+// flushCheckpointLocked finalizes the run's checkpoint. Interval saves
+// leave the last (< checkpoint-interval) results in memory only, so they
+// must be flushed; a run without failures has nothing left to resume and
+// clears the checkpoint instead of leaving an exhausted one in the folder.
+// Callers must hold m.mu.
+func (m *ProcessModel) flushCheckpointLocked() {
+	if m.cfg.CheckpointInterval <= 0 || m.checkpointMgr == nil {
+		return
+	}
+	if m.errorCount == 0 {
+		if err := m.checkpointMgr.Clear(); err != nil {
+			m.logCheckpointWarningLocked("failed to clear checkpoint: %v", err)
+		}
+		return
+	}
+	if err := m.checkpointMgr.Save(); err != nil {
+		m.logCheckpointWarningLocked("failed to save final checkpoint: %v", err)
 	}
 }
 

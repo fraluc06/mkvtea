@@ -58,7 +58,7 @@ internal/
 │   ├── processor.go     # RunProcessTUI entry point, resume prompt, final summary
 │   └── styles.go        # Lipgloss styles
 └── checkpoint/
-    └── checkpoint.go    # Checkpoint Manager: load/save/resume, MD5-based file matching
+    └── checkpoint.go    # Checkpoint Manager: load/save/resume, MD5-based file matching, checkpointDir resolution
 ```
 
 ## Code Standards
@@ -129,6 +129,7 @@ When piping two commands, start the reader first, wire `cmdA.StdoutPipe()` into
 
 - DON'T: Call `os.Exit` inside `RunE` — return the error and let `Execute` handle it
 - DON'T: Byte-slice log lines — prefixes contain multi-byte emoji; use `strings.CutPrefix` and rune-aware truncation
+- DON'T: Assume `cfg.Dir` is a directory — in single-file mode it is the scanned file itself; resolve it first (see `checkpointDir` in `internal/checkpoint`, the stat guard in `encode.discoverParamsFile`) before joining paths against it
 - DON'T: Duplicate timing constants — the auto-close countdown and timer share `autoCloseDelay`
 - DON'T: Compile regexes inside functions — hoist them to package level (see `episodePattern`)
 - DON'T: Skip `gofmt`/`go vet` for "simple" changes
@@ -142,7 +143,7 @@ When piping two commands, start the reader first, wire `cmdA.StdoutPipe()` into
 - Encode mode defaults to 1 worker — SvtAv1EncApp saturates cores on a single video; parallel encodes thrash
 - Process-level parallelism only — MKVToolNix does the heavy I/O, Go coordinates
 - Preallocate slices when size is known (`make([]string, 0, len(files))`)
-- Checkpoint saves are throttled by `--checkpoint-interval` (default every 10 files), not per file
+- Checkpoint saves are throttled by `--checkpoint-interval` (default every 10 files), not per file — at completion `flushCheckpointLocked` persists the unsaved tail, and a run without failures clears the checkpoint instead of leaving an exhausted one behind
 
 ## Deployment
 
