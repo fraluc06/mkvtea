@@ -59,10 +59,24 @@ type Manager struct {
 	checkpoint     *Checkpoint
 }
 
+// checkpointFileName is the per-directory checkpoint file name.
+const checkpointFileName = ".mkvtea_checkpoint.json"
+
+// checkpointDir resolves the directory that holds the checkpoint file. In
+// single-file mode cfg.Dir is the scanned file itself (the scanner accepts
+// either); the checkpoint then lives next to it, like the av1/subs outputs.
+// Unresolvable paths (missing, permissions) fall back to cfg.Dir unchanged,
+// preserving directory-mode behavior.
+func checkpointDir(cfg config.Config) string {
+	if info, err := os.Stat(cfg.Dir); err == nil && !info.IsDir() {
+		return filepath.Dir(cfg.Dir)
+	}
+	return cfg.Dir
+}
+
 // NewManager creates a new checkpoint manager
 func NewManager(cfg config.Config) (*Manager, error) {
-	// Determine checkpoint file location
-	checkpointFile := filepath.Join(cfg.Dir, ".mkvtea_checkpoint.json")
+	checkpointFile := filepath.Join(checkpointDir(cfg), checkpointFileName)
 
 	return &Manager{
 		checkpointFile: checkpointFile,
@@ -99,7 +113,7 @@ func (m *Manager) Create(cfg config.Config, totalFiles int) error {
 	m.checkpoint = &Checkpoint{
 		Mode:              cfg.Mode,
 		Languages:         languages,
-		Directory:         cfg.Dir,
+		Directory:         checkpointDir(cfg),
 		Recursive:         cfg.Recursive,
 		StartedAt:         time.Now(),
 		LastCheckpoint:    time.Now(),
