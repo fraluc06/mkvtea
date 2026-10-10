@@ -41,7 +41,9 @@ var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 // progressPattern matches one color-stripped progress segment:
 // "Encoding:  157/240 Frames @ 1130.77 fps | ..." — the total is absent while
 // the encoder does not know the input length yet ("Encoding:   2 Frames @ ...").
-var progressPattern = regexp.MustCompile(`Encoding:\s+(\d+)(?:/(\d+))?\s+Frames\s+@\s+([\d.]+)\s+fps`)
+// Speeds under 1 fps switch units to "fpm" (frames per minute); the value is
+// normalized to fps so Progress.FPS stays a single unit.
+var progressPattern = regexp.MustCompile(`Encoding:\s+(\d+)(?:/(\d+))?\s+Frames\s+@\s+([\d.]+)\s+(fps|fpm)`)
 
 // parseProgress extracts the structured progress from one stderr segment.
 // Non-progress lines (banner, config dump, errors) report ok == false.
@@ -61,11 +63,14 @@ func parseProgress(segment string) (Progress, bool) {
 			return Progress{}, false
 		}
 	}
-	fps, err := strconv.ParseFloat(m[3], 64)
+	speed, err := strconv.ParseFloat(m[3], 64)
 	if err != nil {
 		return Progress{}, false
 	}
-	return Progress{Frames: frames, Total: total, FPS: fps}, true
+	if m[4] == "fpm" {
+		speed /= 60
+	}
+	return Progress{Frames: frames, Total: total, FPS: speed}, true
 }
 
 // progressWriter tees SvtAv1EncApp stderr: every byte still lands in the tail

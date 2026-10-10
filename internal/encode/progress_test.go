@@ -26,6 +26,18 @@ func TestParseProgress(t *testing.T) {
 			wantOK:  true,
 		},
 		{
+			name:    "sub-1 fps speed reports fpm units",
+			segment: "Encoding: \x1b[33m   1 Frames\x1b[0m @ \x1b[32m35.26\x1b[0m fpm | \x1b[35m427.42 kb/s\x1b[0m | Size: \x1b[31m0.25 MB\x1b[0m",
+			want:    Progress{Frames: 1, Total: 0, FPS: 35.26 / 60},
+			wantOK:  true,
+		},
+		{
+			name:    "fpm with total normalizes to fps",
+			segment: "Encoding:  10/240 Frames @ 90.0 fpm | Size: 0.10 MB",
+			want:    Progress{Frames: 10, Total: 240, FPS: 1.5},
+			wantOK:  true,
+		},
+		{
 			name:    "plain text without ANSI",
 			segment: "Encoding:  240/240 Frames @ 1475.51 fps | Size: 0.02 MB",
 			want:    Progress{Frames: 240, Total: 240, FPS: 1475.51},
