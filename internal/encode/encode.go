@@ -89,8 +89,13 @@ func RunEncode(path string, cfg config.Config, onProgress ProgressFunc) error {
 
 	// The encoder only knows the frame total at input EOF (late on slow
 	// presets); estimate one from metadata so the TUI can show a percent
-	// from the first frame.
-	progress := encoderProgress{onProgress: onProgress, estimatedTotal: estimatedFrames(info)}
+	// from the first frame. Containers that hide duration/default_duration
+	// from `mkvmerge -J` (MP4 among them) fall back to ffprobe probing.
+	estimatedTotal := estimatedFrames(info)
+	if estimatedTotal == 0 {
+		estimatedTotal = probeEstimatedFrames(path)
+	}
+	progress := encoderProgress{onProgress: onProgress, estimatedTotal: estimatedTotal}
 	if err := encodeVideo(path, tmpPath, params, progress); err != nil {
 		return err
 	}

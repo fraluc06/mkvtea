@@ -48,7 +48,8 @@ internal/
 │   └── *_test.go
 ├── encode/
 │   ├── encode.go        # RunEncode: ffmpeg→SvtAv1EncApp y4m pipe, mkvmerge remux, output paths
-│   ├── progress.go      # Parse SvtAv1EncApp stderr progress (\r-delimited, ANSI-colored) → plain ProgressFunc
+│   ├── progress.go      # Parse SvtAv1EncApp stderr progress (\r-delimited, ANSI-colored, fps/fpm) → plain ProgressFunc
+│   ├── probe.go         # probeEstimatedFrames: ffprobe frame-count estimate for containers mkvmerge can't measure (MP4)
 │   ├── params.go        # ParseParams/ResolveParams: flag > file > .mkvtea-av1-params > defaults
 │   └── *_test.go
 ├── ui/
@@ -119,7 +120,9 @@ color codes and, while piping stdin, without a frame total (`Encoding: 2 Frames
 byte to the `tailBuffer` diagnostics and forwards parsed updates through a plain
 `ProgressFunc` callback — the engine stays TUI-agnostic (dependency law). Until the
 encoder learns the real total at input EOF (late on slow presets), `estimatedFrames`
-derives one from `mkvmerge -J` container duration ÷ video `default_duration`; such
+derives one from `mkvmerge -J` container duration ÷ video `default_duration`; when the
+container hides both (MP4 does), `probeEstimatedFrames` re-probes with ffprobe
+(`nb_frames`, else duration × `r_frame_rate`); such
 totals carry `Progress.Estimated` and the TUI renders them with `≈`. Because the
 encoder only learns the total at input EOF (late on slow presets), `estimatedFrames`
 derives one from `mkvmerge -J` container duration / video `default_duration` so the
